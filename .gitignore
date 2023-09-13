@@ -1,0 +1,6 @@
+/build
+/hardware
+/Linux_for_Tegra
+/packages
+/toolchain
+/.sdk_variable.env
