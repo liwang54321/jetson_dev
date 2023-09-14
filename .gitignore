@@ -1,6 +1,7 @@
 /build
 /hardware
 /Linux_for_Tegra
+/opensrc
 /packages
 /toolchain
 /.sdk_variable.env

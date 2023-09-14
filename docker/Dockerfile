@@ -119,8 +119,7 @@ RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
 
 # Install JetPack
 RUN sudo apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc
-# RUN sudo echo "deb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list
-RUN sudo sh -c 'echo "\ndeb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list' && cat /etc/apt/sources.list
+RUN sudo sh -c 'echo "\ndeb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list'
 
 RUN sudo apt update && \
     sudo apt-get install cuda-cross-aarch64-11-4 cuda-cupti-cross-aarch64-11-4 \
@@ -134,7 +133,7 @@ COPY --chown=${user_name}:${user_name} files/l4t_flash_prerequisites.sh /tmp/
 # Install SDK
 ARG sdk_path=/l4t
 RUN sudo mkdir ${sdk_path} && sudo chown ${user_name}:${user_name} ${sdk_path} -R
-RUN bash /tmp/l4t_flash_prerequisites.sh
+RUN sudo sh -c "/tmp/l4t_flash_prerequisites.sh"
 
 # clean 
 RUN sudo rm /tmp/* -rf && \

@@ -7,10 +7,11 @@ export SDK_VARIABLE_F="./.sdk_variable.env"
 function set_variable()
 {
     local sdk_home=$1
+    export BOARD=jetson-xavier-nx-devkit
     export SDK_VERSION=r35_release_v4.1
-    export SDK_PKG=jetson_linux_r35.4.1_aarch64.tbz2
-    export ROOTFS_PKG=tegra_linux_sample-root-filesystem_r35.4.1_aarch64.tbz2
-    # export ROOTFS_PKG=base_fs.tbz2
+    export L4T_RELEASE_PACKAGE=jetson_linux_r35.4.1_aarch64.tbz2
+    export SAMPLE_FS_PACKAGE=tegra_linux_sample-root-filesystem_r35.4.1_aarch64.tbz2
+    # export SAMPLE_FS_PACKAGE=base_fs.tbz2
     export JETSON_KERNEL_VERSION=5.10.120-rt70-tegra
     export JETSON_STORAGE_TYPE="nvme0n1p1"
 
@@ -35,14 +36,15 @@ function set_variable()
     export BOARDID=3668
     export BOARDSKU=0000
     export FAB=100
+    export tegra194
 }
 
 function save_variable()
 {
 cat> ${SDK_VARIABLE_F} <<EOF
 export SDK_VERSION=${SDK_VERSION}
-export SDK_PKG=${SDK_PKG}
-export ROOTFS_PKG=${ROOTFS_PKG}
+export L4T_RELEASE_PACKAGE=${L4T_RELEASE_PACKAGE}
+export SAMPLE_FS_PACKAGE=${SAMPLE_FS_PACKAGE}
 export JETSON_KERNEL_VERSION=${JETSON_KERNEL_VERSION}
 export JETSON_STORAGE_TYPE=${JETSON_STORAGE_TYPE}
 export JETSON_SDK_PATH=${JETSON_SDK_PATH}
@@ -60,14 +62,18 @@ export CROSS_COMPILE_AARCH64=${CROSS_COMPILE_AARCH64}
 export CROSS_COMPILE=${CROSS_COMPILE}
 export LOCALVERSION=${LOCALVERSION}
 export IGNORE_PREEMPT_RT_PRESENCE=${IGNORE_PREEMPT_RT_PRESENCE}
+
+export BOARD=${BOARD}
 export BOARDID=${BOARDID}
 export BOARDSKU=${BOARDSKU}
 export FAB=${FAB}
+export tegra194
 EOF
 }
 
 function install_sdk()
 {
+    [ $# != 2 ] && echo "Error: Input Install Path" && exit -1
     set_variable $1
     save_variable
 
@@ -78,15 +84,15 @@ function install_sdk()
     wget -O ${toolchain_tgz} -N https://developer.nvidia.com/embedded/jetson-linux/bootlin-toolchain-gcc-93
     
     echo "Start Download Jetson SDK"
-    local sdk_tgz=${JETSON_PACKAGE_PATH}/${SDK_PKG}
+    local sdk_tgz=${JETSON_PACKAGE_PATH}/${L4T_RELEASE_PACKAGE}
     [ -f "${sdk_tgz}" ] || \
-    wget -P ${JETSON_PACKAGE_PATH} -N https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/release/${SDK_PKG}
+    wget -P ${JETSON_PACKAGE_PATH} -N https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/release/${L4T_RELEASE_PACKAGE}
     
     echo "Start Download Jetson Rootfs"
-    local rootfs_tgz=${JETSON_PACKAGE_PATH}/${ROOTFS_PKG}
+    local rootfs_tgz=${JETSON_PACKAGE_PATH}/${SAMPLE_FS_PACKAGE}
     [ -d "${JETSON_PACKAGE_PATH}" ] || mkdir -p ${JETSON_PACKAGE_PATH}
     [ -f "${rootfs_tgz}" ] || \
-    wget -P ${JETSON_PACKAGE_PATH} -N https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/release/${ROOTFS_PKG}
+    wget -P ${JETSON_PACKAGE_PATH} -N https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/release/${SAMPLE_FS_PACKAGE}
     
     echo "Start Download Jetson Kernel Source"
     [ -f "${JETSON_PACKAGE_PATH}/public_sources.tbz2" ] || \
@@ -156,33 +162,52 @@ function check_board()
 
 function flash()
 {
-    # check_board
-
     # Turn off USB mass storage during flashing
     sudo systemctl stop udisks2.service
+    
     pushd ${JETSON_SDK_HOME} > /dev/null 2>&1
-    sudo ./nvsdkmanager_flash.sh --storage "${JETSON_STORAGE_TYPE}"
-    # echo "Start Gen Flash Images"
-    # sudo -E ${JETSON_SDK_HOME}/tools/kernel_flash/l4t_initrd_flash_internal.sh \
-    #     --no-flash \
-    #     --external-device nvme0n1p1 \
-    #     -c tools/kernel_flash/flash_l4t_t194_nvme.xml \
-    #     --showlogs --network usb0 \
-    #     -p "--no-systemimg -c bootloader/t186ref/cfg/flash_l4t_t194_qspi_p3668.xml" \
-    #     jetson-xavier-nx-devkit \
-    #     nvme0n1p1
+    
+    # Auto Flash    
+    # sudo ./nvsdkmanager_flash.sh --storage "${JETSON_STORAGE_TYPE}"
 
-    # echo "Start Flash Images"
-    # sudo -E ${JETSON_SDK_HOME}/tools/kernel_flash/l4t_initrd_flash_internal.sh \
-    #     --network usb0 \
-    #     --usb-instance 3-2 \
-    #     --device-instance 0 \
+    # NVME
+    # sudo ./tools/kernel_flash/l4t_initrd_flash.sh \
+    #     --showlogs \
+    #     --initrd \
     #     --flash-only \
-    #     --external-device nvme0n1p1 \
-    #     -c "tools/kernel_flash/flash_l4t_t194_nvme.xml" \
-    #     --network usb0 \
-    #     jetson-xavier-nx-devkit \
+    #     ${BOARD} \
     #     nvme0n1p1
+    
+    # USB Storage
+    # sudo ./tools/kernel_flash/l4t_initrd_flash.sh \
+    #     --showlogs \
+    #     --initrd \
+    #     --flash-only \
+    #     ${BOARD} \
+    #     sda1
+
+    # --external-device : Descption Device Name In Jetson
+    # external : Descption Device Mode In X86 Host or Jetson Device
+    # --direct : Device Name In X86 Host Pc
+
+    # sudo ./tools/kernel_flash/l4t_initrd_flash.sh  \
+    #     -c tools/kernel_flash/flash_l4t_external.xml  \
+    #     --external-device sda1 \
+    #     --direct sdb \
+    #     ${BOARD} \
+    #     external
+
+
+    echo "Start Flash Images"
+    sudo -E ${JETSON_SDK_HOME}/tools/kernel_flash/l4t_initrd_flash_internal.sh \
+        --external-device nvme0n1p1 \
+        -c tools/kernel_flash/flash_l4t_t194_nvme.xml \
+        --showlogs \
+        -p "--no-systemimg -c bootloader/t186ref/cfg/flash_l4t_t194_qspi_p3668.xml"  \
+        --network usb0 \
+        ${BOARD} \
+        internal
+
 
     popd > /dev/null 2>&1
 }
