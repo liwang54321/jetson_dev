@@ -40,29 +40,29 @@ function set_variable()
 function save_variable()
 {
 cat> ${SDK_VARIABLE_F} <<EOF
-SDK_VERSION=${SDK_VERSION}
-SDK_PKG=${SDK_PKG}
-ROOTFS_PKG=${ROOTFS_PKG}
-JETSON_KERNEL_VERSION=${JETSON_KERNEL_VERSION}
-JETSON_STORAGE_TYPE=${JETSON_STORAGE_TYPE}
-JETSON_SDK_PATH=${JETSON_SDK_PATH}
-JETSON_SDK_HOME=${JETSON_SDK_HOME}
-JETSON_TOOLCHAIN=${JETSON_TOOLCHAIN}
-JETSON_PACKAGE_PATH=${JETSON_PACKAGE_PATH}
-JETSON_ROOTFS=${JETSON_ROOTFS}
-JETSON_PUBLIC_PACKAGE=${JETSON_PUBLIC_PACKAGE}
-JETSON_PUBLIC_SOURCE=${JETSON_PUBLIC_SOURCE}
-JETSON_KERNEL=${JETSON_KERNEL}
-JETSON_DISPLAY_MODULE=${JETSON_DISPLAY_MODULE}
-JETSON_KERNEL_OUT=${JETSON_KERNEL_OUT}
-CROSS_COMPILE_AARCH64_PATH=${CROSS_COMPILE_AARCH64_PATH}
-CROSS_COMPILE_AARCH64=${CROSS_COMPILE_AARCH64}
-CROSS_COMPILE=${CROSS_COMPILE}
-LOCALVERSION=${LOCALVERSION}
-IGNORE_PREEMPT_RT_PRESENCE=${IGNORE_PREEMPT_RT_PRESENCE}
-BOARDID=${BOARDID}
-BOARDSKU=${BOARDSKU}
-FAB=${FAB}
+export SDK_VERSION=${SDK_VERSION}
+export SDK_PKG=${SDK_PKG}
+export ROOTFS_PKG=${ROOTFS_PKG}
+export JETSON_KERNEL_VERSION=${JETSON_KERNEL_VERSION}
+export JETSON_STORAGE_TYPE=${JETSON_STORAGE_TYPE}
+export JETSON_SDK_PATH=${JETSON_SDK_PATH}
+export JETSON_SDK_HOME=${JETSON_SDK_HOME}
+export JETSON_TOOLCHAIN=${JETSON_TOOLCHAIN}
+export JETSON_PACKAGE_PATH=${JETSON_PACKAGE_PATH}
+export JETSON_ROOTFS=${JETSON_ROOTFS}
+export JETSON_PUBLIC_PACKAGE=${JETSON_PUBLIC_PACKAGE}
+export JETSON_PUBLIC_SOURCE=${JETSON_PUBLIC_SOURCE}
+export JETSON_KERNEL=${JETSON_KERNEL}
+export JETSON_DISPLAY_MODULE=${JETSON_DISPLAY_MODULE}
+export JETSON_KERNEL_OUT=${JETSON_KERNEL_OUT}
+export CROSS_COMPILE_AARCH64_PATH=${CROSS_COMPILE_AARCH64_PATH}
+export CROSS_COMPILE_AARCH64=${CROSS_COMPILE_AARCH64}
+export CROSS_COMPILE=${CROSS_COMPILE}
+export LOCALVERSION=${LOCALVERSION}
+export IGNORE_PREEMPT_RT_PRESENCE=${IGNORE_PREEMPT_RT_PRESENCE}
+export BOARDID=${BOARDID}
+export BOARDSKU=${BOARDSKU}
+export FAB=${FAB}
 EOF
 }
 
@@ -192,7 +192,7 @@ function build_kernel()
     echo "Start Build Kernel Source"
     pushd "${JETSON_KERNEL}" > /dev/null 2>&1
     pushd kernel > /dev/null 2>&1
-    ./kernel-5.10/scripts/rt-patch.sh apply-patches
+    bash -E ./kernel-5.10/scripts/rt-patch.sh apply-patches
     popd > /dev/null 2>&1
     [ ! -d "${JETSON_KERNEL_OUT}" ] && mkdir -p "${JETSON_KERNEL_OUT}"
     ./nvbuild.sh -o "${JETSON_KERNEL_OUT}"
@@ -285,19 +285,20 @@ function usage()
     local ScriptName=$1
 cat <<EOF 
     Use: "${ScriptName}" 
-        [--install_sdk|-i PATH] 
-        [--build_kernel] 
-        [--install_kernel] 
-        [--create_user|-u] 
-        [--flash|-f] 
-        [--build_docker] 
-        [--run_docker|-r] 
-        [--setup_env] 
-        [--help|-h]
+        [ --install_sdk|-i <PATH> ] Install l4t SDK
+        [ --build_kernel ] Build Linux Kernel & Modules & Display Modules
+        [ --install_kernel ] Install Linux Kernel & Modules & Display Modules To Flash Dir & Rootfs
+        [ --create_user|-u ] Create User To Rootfs
+        [ --flash|-f ]  Flash Image To Jetson Device
+        [ --build_docker ] Build L4t Dev Docker Image
+        [ --run_docker|-r ]  Run L4t Dev Docker
+        [ --setup_env ] Install Dev Env Packages & Install Some L4t Package To Rootfs
+        [ --help|-h ] Print This Message
 EOF
 }
 
 if [ -f ${SDK_VARIABLE_F} ]; then
+    echo "Get Env File"
     source ${SDK_VARIABLE_F}
 fi
 

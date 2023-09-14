@@ -3,8 +3,8 @@ FROM ubuntu:${ubuntu_version}
 
 ARG user_name=lw
 
-ARG jetson_sdk=Jetson_Linux_R35.2.1_aarch64.tbz2
-ARG jetson_rootfs=Tegra_Linux_Sample-Root-Filesystem_R35.2.1_aarch64.tbz2
+ARG jetson_sdk=Jetson_Linux_R35.4.1_aarch64.tbz2
+ARG jetson_rootfs=Tegra_Linux_Sample-Root-Filesystem_R35.4.1_aarch64.tbz2
 
 ENV TIME_ZONE Asia/Shanghai
 ENV LANG C.UTF-8
@@ -70,8 +70,8 @@ RUN apt install -y --no-install-recommends \
                 cpio \
                 flex \
                 xxd \
-                depmod \
-                kmod
+                kmod \
+                gnupg2
 
 
 # User
@@ -116,6 +116,17 @@ RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
     && sudo pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
     && sudo pip3 install --upgrade conan \
     && conan profile detect --force
+
+# Install JetPack
+RUN sudo apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc
+# RUN sudo echo "deb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list
+RUN sudo sh -c 'echo "\ndeb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list' && cat /etc/apt/sources.list
+
+RUN sudo apt update && \
+    sudo apt-get install cuda-cross-aarch64-11-4 cuda-cupti-cross-aarch64-11-4 \
+        cuda-sanitizer-11-4 cuda-toolkit-11-4 libnvvpi2 nsight-compute-2022.2.1 \
+        nsight-compute-addon-l4t-2022.2.1 nsight-graphics-for-embeddedlinux-2023.2.0.0 \
+        nsight-systems-2023.2.4 nvsci python3.8-vpi2 vpi2-demos vpi2-cross-aarch64-l4t vpi2-dev vpi2-samples -y
 
 # COPY SDK
 COPY --chown=${user_name}:${user_name} files/l4t_flash_prerequisites.sh /tmp/
