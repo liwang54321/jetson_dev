@@ -7,7 +7,7 @@ export SDK_VARIABLE_F="./.sdk_variable.env"
 function set_variable()
 {
     local sdk_home=$1
-    export BOARD=jetson-xavier-nx-devkit
+    export BOARD=${BOARD}
     export SDK_VERSION=r35_release_v4.1
     export L4T_RELEASE_PACKAGE=jetson_linux_r35.4.1_aarch64.tbz2
     export SAMPLE_FS_PACKAGE=tegra_linux_sample-root-filesystem_r35.4.1_aarch64.tbz2
@@ -37,6 +37,7 @@ function set_variable()
     export BOARDSKU=0000
     export FAB=100
     export tegra194
+    export ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo"
 }
 
 function save_variable()
@@ -68,12 +69,13 @@ export BOARDID=${BOARDID}
 export BOARDSKU=${BOARDSKU}
 export FAB=${FAB}
 export tegra194
+export ADDITIONAL_DTB_OVERLAY=BootOrderNvme.dtbo
 EOF
 }
 
 function install_sdk()
 {
-    [ $# != 2 ] && echo "Error: Input Install Path" && exit -1
+    [ $# != 1 ] && echo "Error: Input Install Path" && exit -1
     set_variable $1
     save_variable
 
@@ -133,7 +135,7 @@ function setup_env()
 
     # Install the prerequisite dependencies for flashing
     echo "Start Install Jetson Prerequisite"
-    sudo ./tools/l4t_flash_prerequisites.sh
+    # sudo ./tools/l4t_flash_prerequisites.sh
     popd > /dev/null 2>&1
 }
 
@@ -160,56 +162,90 @@ function check_board()
     popd > /dev/null 2>&1
 }
 
-function flash()
+function flash_usb()
 {
-    # Turn off USB mass storage during flashing
-    sudo systemctl stop udisks2.service
-    
-    pushd ${JETSON_SDK_HOME} > /dev/null 2>&1
-    
-    # Auto Flash    
-    # sudo ./nvsdkmanager_flash.sh --storage "${JETSON_STORAGE_TYPE}"
+    echo "Start Flash Usb"
+}
 
-    # NVME
-    # sudo ./tools/kernel_flash/l4t_initrd_flash.sh \
-    #     --showlogs \
-    #     --initrd \
-    #     --flash-only \
-    #     ${BOARD} \
-    #     nvme0n1p1
-    
-    # USB Storage
-    # sudo ./tools/kernel_flash/l4t_initrd_flash.sh \
-    #     --showlogs \
-    #     --initrd \
-    #     --flash-only \
-    #     ${BOARD} \
-    #     sda1
+function flash_nvme()
+{
+    echo "Start Flash Nvme"
+    # 7023 for Jetson AGX Orin 
+    # 7019 for Jetson AGX Xavier.
+    # 7e19 for Jetson AGX Xavier.
+    local idProduct=7e19
+    local usb_info=`grep ${idProduct} /sys/bus/usb/devices/*/idProduct`
+    local usb_instance=`echo ${usb_info} | awk -F'/' '{print $6}' | tr -d '\n'`
 
-    # --external-device : Descption Device Name In Jetson
-    # external : Descption Device Mode In X86 Host or Jetson Device
-    # --direct : Device Name In X86 Host Pc
+    local flash_only=${1}
 
-    # sudo ./tools/kernel_flash/l4t_initrd_flash.sh  \
-    #     -c tools/kernel_flash/flash_l4t_external.xml  \
-    #     --external-device sda1 \
-    #     --direct sdb \
-    #     ${BOARD} \
-    #     external
-
+    if [ "${flash_only}" == "off" ]; then
+        echo "Start Gen Flash Images"
+        sudo -E ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo" ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" bash -x ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
+            --external-device nvme0n1p1 \
+            -c tools/kernel_flash/flash_l4t_nvme.xml \
+            --network usb0 \
+            --showlogs \
+            -S 64GiB \
+            --no-flash \
+            -p '--no-systemimg -c bootloader/t186ref/cfg/flash_l4t_t194_qspi_p3668.xml' \
+            ${BOARD} \
+            internal
+    fi
 
     echo "Start Flash Images"
-    sudo -E ${JETSON_SDK_HOME}/tools/kernel_flash/l4t_initrd_flash_internal.sh \
+    sudo -E ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo" ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" bash -x ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
+        --usb-instance ${usb_instance} \
+        --device-instance 0 \
         --external-device nvme0n1p1 \
-        -c tools/kernel_flash/flash_l4t_t194_nvme.xml \
+        -c "tools/kernel_flash/flash_l4t_nvme.xml" \
         --showlogs \
-        -p "--no-systemimg -c bootloader/t186ref/cfg/flash_l4t_t194_qspi_p3668.xml"  \
+        --network usb0 \
+        --flash-only \
+        -S 64GiB \
         --network usb0 \
         ${BOARD} \
         internal
 
+}
 
+function flash_auto()
+{
+    echo "Auto Flash"
+    sudo ./nvsdkmanager_flash.sh --storage "${JETSON_STORAGE_TYPE}"
+}
+
+function flash_sd()
+{
+    echo "Flash SD Card"
+}
+
+function flash()
+{   
+    local flash_type=${1}           # "nvme" "sd" "auto"
+    local flash_only=${2}           # "on" "off"
+
+    echo "Start Flash ${flash_type} Flash_only = ${flash_only}" 
+
+    # Turn off USB mass storage during flashing
+    sudo systemctl stop udisks2.service
+
+    pushd "${JETSON_SDK_HOME}" > /dev/null 2>&1
+
+    if [ "${flash_type}" == "nvme" ]; then
+        flash_nvme ${flash_only}
+    elif [ "${flash_type}" == "sd" ]; then 
+        flash_sd ${flash_only}
+    else 
+        flash_auto
+    fi
+    
     popd > /dev/null 2>&1
+    
+    
+
+    # sudo -E ./flash.sh --no-systemimg -r -S 32GiB ${BOARD} external
+
 }
 
 function build_kernel()
@@ -314,7 +350,7 @@ cat <<EOF
         [ --build_kernel ] Build Linux Kernel & Modules & Display Modules
         [ --install_kernel ] Install Linux Kernel & Modules & Display Modules To Flash Dir & Rootfs
         [ --create_user|-u ] Create User To Rootfs
-        [ --flash|-f ]  Flash Image To Jetson Device
+        [ --flash|-f <type> <flash_only> ]  Flash Image To Jetson Device: type : nvme, sd, auto, flash_only: on, off
         [ --build_docker ] Build L4t Dev Docker Image
         [ --run_docker|-r ]  Run L4t Dev Docker
         [ --setup_env ] Install Dev Env Packages & Install Some L4t Package To Rootfs
@@ -330,28 +366,32 @@ fi
 # script name
 SCRIPT_NAME=$(basename "$0")
 GETOPT=`getopt -n "$SCRIPT_NAME" \
-    --longoptions help,install_sdk:,build_kernel,install_kernel,create_user,flash,build_docker,run_docker,setup_env \
-    -o hi:ufr -- "$@"`
+    --longoptions help,install_sdk:,build_kernel,install_kernel,create_user,flash:,flash_only,build_docker,run_docker,setup_env \
+    -o hi:uf:r -- "$@"`
 if [ $? != 0 ]; then
     usage
     exit 1
 fi
 
 eval set -- "${GETOPT}"
-
+flash_only="off"
+flash_dev="auto"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-h|--help) usage ${SCRIPT_NAME} && exit 0 ;;
-	-i|--install_sdk) install_sdk ${2} && shift && exit 0 ;;
+	-i|--install_sdk) install_sdk ${2} && exit 0 ;;
 	--build_kernel) build_kernel && exit 0 ;;
 	--install_kernel) install_kernel && exit 0 ;;
 	-r|--run_docker) run_docker && exit 0 ;;
 	--build_docker) build_docker && exit 0 ;;
+	--flash_only) flash_only="on" ;;
 	-u|--create_user) create_user && exit 0 ;;
 	--setup_env) setup_env && exit 0 ;;
-	-f|--flash) flash && exit 0 ;;
+	-f|--flash) flash_dev=${2}; shift;;
 	--) shift; break ;;
 	-*) echo "Unknown option: $@" >&2 ; usage "${SCRIPT_NAME}"; exit 1 ;;
 	esac
 	shift
 done
+
+flash ${flash_dev} ${flash_only}
