@@ -10,7 +10,7 @@ ENV TIME_ZONE Asia/Shanghai
 ENV LANG C.UTF-8
 
 # update source
-RUN  apt update && apt install --reinstall ca-certificates -y
+RUN  apt update && apt install --no-install-recommends --reinstall ca-certificates -y
 COPY --chown=root:root ./files/sources.list.20.04  /etc/apt/sources.list
 RUN apt clean && apt update && apt upgrade -y
 

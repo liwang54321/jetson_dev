@@ -11,7 +11,6 @@ function set_variable()
     export SDK_VERSION=r35_release_v4.1
     export L4T_RELEASE_PACKAGE=jetson_linux_r35.4.1_aarch64.tbz2
     export SAMPLE_FS_PACKAGE=tegra_linux_sample-root-filesystem_r35.4.1_aarch64.tbz2
-    # export SAMPLE_FS_PACKAGE=base_fs.tbz2
     export JETSON_KERNEL_VERSION=5.10.120-rt70-tegra
     export JETSON_STORAGE_TYPE="nvme0n1p1"
 
@@ -38,6 +37,8 @@ function set_variable()
     export FAB=100
     export tegra194
     export ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo"
+    export USER_NAME=lw
+    export PASSWD=lw
 }
 
 function save_variable()
@@ -70,7 +71,127 @@ export BOARDSKU=${BOARDSKU}
 export FAB=${FAB}
 export tegra194
 export ADDITIONAL_DTB_OVERLAY=BootOrderNvme.dtbo
+export USER_NAME=${USER_NAME}
+export PASSWD=${PASSWD}
 EOF
+}
+
+function remove_static_libs()
+{
+    echo "Start Remove Static Libs"
+    pushd ${JETSON_ROOTFS} > /dev/null 2>&1
+    sudo find -name lib*.a | xargs sudo rm 
+    popd > /dev/null
+}
+
+function strip_rootfs()
+{
+    echo "Start Strip Rootfs"
+    pushd ${JETSON_ROOTFS} > /dev/null 2>&1
+    sudo find -name lib*.so | xargs sudo ${CROSS_COMPILE_AARCH64}strip
+    sudo find -executable | xargs sudo ${CROSS_COMPILE_AARCH64}strip
+    popd > /dev/null
+}
+
+function remove_include_file()
+{
+    echo "Start Remove Rootfs Include File"
+    pushd ${JETSON_ROOTFS} > /dev/null 2>&1
+    sudo find -name *.h | xargs sudo rm 
+    popd > /dev/null
+}
+
+function gen_base_rootfs()
+{
+    popd ${JETSON_SDK_HOME}/tools/samplefs > /dev/null 2>&1
+    sudo ./nv_build_samplefs.sh --abi aarch64 --distro ubuntu --flavor basic --version focal
+    popd  > /dev/null 2>&1
+}
+
+function copy_customer_layer()
+{
+    sudo cp -arfd ${JETSON_SDK_PATH}/customer_layer/Linux_for_Tegra/rootfs/* ${JETSON_ROOTFS}
+}
+
+function __install_jetpack()
+{
+    pushd "${JETSON_ROOTFS}" > /dev/null 2>&1
+    sudo cp /usr/bin/qemu-aarch64-static "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static" -ardf
+    sudo chmod 755 "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static"
+
+    sudo mount /sys ./sys -o bind
+    sudo mount /proc ./proc -o bind
+    sudo mount /dev ./dev -o bind
+    sudo mount /dev/pts ./dev/pts -o bind
+
+    if [ -s etc/resolv.conf ]; then
+        sudo mv etc/resolv.conf etc/resolv.conf.saved
+    fi
+    if [ -e "/run/resolvconf/resolv.conf" ]; then
+        sudo cp /run/resolvconf/resolv.conf etc/
+    elif [ -e "/etc/resolv.conf" ]; then
+        sudo cp /etc/resolv.conf etc/
+    fi
+
+    sudo LC_ALL=C chroot . apt update
+    sudo LC_ALL=C chroot . apt install --no-install-recommends -y gnupg2
+
+    sudo LC_ALL=C chroot . apt-key adv --fetch-key https://repo.download.nvidia.com/jetson/jetson-ota-public.asc
+    sudo LC_ALL=C chroot . apt update
+    sudo LC_ALL=C chroot . apt install --no-install-recommends -y nvidia-jetpack-runtime htop lrzsz
+    sudo LC_ALL=C chroot . usermod -aG docker ${USER_NAME}
+
+    sudo LC_ALL=C chroot . sync
+    sudo LC_ALL=C chroot . apt-get clean
+    sudo LC_ALL=C chroot . sync
+
+    if [ -s etc/resolv.conf.saved ]; then
+        sudo mv etc/resolv.conf.saved etc/resolv.conf
+    fi
+
+    sudo umount ./sys
+    sudo umount ./proc
+    sudo umount ./dev/pts
+    sudo umount ./dev
+
+    sudo rm "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static"
+
+    sudo rm -rf var/lib/apt/lists/*
+    sudo rm -rf dev/*
+    sudo rm -rf var/log/*
+    sudo rm -rf var/cache/apt/archives/*.deb
+    sudo rm -rf var/tmp/*
+    sudo rm -rf tmp/*
+    popd > /dev/null
+}
+
+function build_rootfs()
+{
+    local is_customer=${1}
+    sudo rm -rf ${JETSON_SDK_HOME}/rootfs/*
+    if [ ${is_customer} = "yes" ]; then
+        local custom_rootfs=${JETSON_SDK_HOME}/tools/samplefs/sample_fs.tbz2
+        [ ! -e ${custom_rootfs} ] && gen_base_rootfs
+        
+        sudo tar -xjf ${custom_rootfs} -C ${JETSON_ROOTFS}
+    else
+        echo "Start Download Jetson Rootfs"
+        local rootfs_tgz=${JETSON_PACKAGE_PATH}/${SAMPLE_FS_PACKAGE}
+        [ -d "${JETSON_PACKAGE_PATH}" ] || mkdir -p ${JETSON_PACKAGE_PATH}
+        [ -f "${rootfs_tgz}" ] || \
+        wget -P ${JETSON_PACKAGE_PATH} -N https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/release/${SAMPLE_FS_PACKAGE}
+
+        echo "Start Install Jetson Rootfs"
+        pushd "${JETSON_ROOTFS}" > /dev/null 2>&1
+        [ ! -e "${JETSON_ROOTFS}/bin" ] && sudo tarpf ${rootfs_tgz}
+        export LDK_ROOTFS_DIR=$PWD
+        popd > /dev/null 2>&1
+
+    fi
+    setup_env
+    create_user
+    copy_customer_layer
+    __install_jetpack
 }
 
 function install_sdk()
@@ -90,12 +211,6 @@ function install_sdk()
     [ -f "${sdk_tgz}" ] || \
     wget -P ${JETSON_PACKAGE_PATH} -N https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/release/${L4T_RELEASE_PACKAGE}
     
-    echo "Start Download Jetson Rootfs"
-    local rootfs_tgz=${JETSON_PACKAGE_PATH}/${SAMPLE_FS_PACKAGE}
-    [ -d "${JETSON_PACKAGE_PATH}" ] || mkdir -p ${JETSON_PACKAGE_PATH}
-    [ -f "${rootfs_tgz}" ] || \
-    wget -P ${JETSON_PACKAGE_PATH} -N https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/release/${SAMPLE_FS_PACKAGE}
-    
     echo "Start Download Jetson Kernel Source"
     [ -f "${JETSON_PACKAGE_PATH}/public_sources.tbz2" ] || \
     wget -N -P ${JETSON_PACKAGE_PATH} https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/sources/public_sources.tbz2
@@ -105,12 +220,6 @@ function install_sdk()
 
     echo "Start Install Jetson SDK"
     [ ! -e "${JETSON_SDK_HOME}" ] && tar -xjf "${sdk_tgz}" -C "${JETSON_SDK_PATH}"
-    
-    echo "Start Install Jetson Rootfs"
-    pushd "${JETSON_ROOTFS}" > /dev/null 2>&1
-    [ ! -e "${JETSON_ROOTFS}/bin" ] && sudo tar -xpf ${rootfs_tgz}
-    export LDK_ROOTFS_DIR=$PWD
-    popd > /dev/null 2>&1
 
     echo "Start Install Jetson Public Sources"
     [ ! -d "${JETSON_SDK_HOME}/source/public" ] && \
@@ -119,7 +228,6 @@ function install_sdk()
     [ ! -e ${JETSON_KERNEL} ] && mkdir -p ${JETSON_KERNEL}
     [ ! -e "${JETSON_SDK_HOME}/source/public/kernel" ] && tar -xf kernel_src.tbz2 -C ${JETSON_KERNEL}
     popd > /dev/null 2>&1
-
 
     pushd "${JETSON_PUBLIC_SOURCE}" > /dev/null 2>&1
     [ ! -d "${JETSON_DISPLAY_MODULE}" ] && \
@@ -167,23 +275,15 @@ function flash_usb()
     echo "Start Flash Usb"
 }
 
-function flash_nvme()
+function build_image()
 {
-    echo "Start Flash Nvme"
-    # 7023 for Jetson AGX Orin 
-    # 7019 for Jetson AGX Xavier.
-    # 7e19 for Jetson AGX Xavier.
-    local idProduct=7e19
-    local usb_info=`grep ${idProduct} /sys/bus/usb/devices/*/idProduct`
-    local usb_instance=`echo ${usb_info} | awk -F'/' '{print $6}' | tr -d '\n'`
-
-    local flash_only=${1}
-
-    if [ "${flash_only}" == "off" ]; then
-        echo "Start Gen Flash Images"
-        sudo -E ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo" ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" bash -x ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
+    local build_type=${1}
+    echo "Start Build ${build_type} Image"
+    pushd ${JETSON_SDK_HOME} > /dev/null 2>&1
+    if [ ${build_type} == "nvme" ]; then
+        sudo -E ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo" ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
             --external-device nvme0n1p1 \
-            -c tools/kernel_flash/flash_l4t_nvme.xml \
+            -c tools/kernel_flash/flash_l4t_external.xml \
             --network usb0 \
             --showlogs \
             -S 64GiB \
@@ -191,14 +291,34 @@ function flash_nvme()
             -p '--no-systemimg -c bootloader/t186ref/cfg/flash_l4t_t194_qspi_p3668.xml' \
             ${BOARD} \
             internal
+    elif [ ${build_type} == "sd" ]; then 
+        echo "--sd"
+    elif [ ${build_type} == "usb" ]; then 
+        echo "--usb"
     fi
+    popd > /dev/null
+}
 
-    echo "Start Flash Images"
-    sudo -E ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo" ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" bash -x ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
+function initramfs()
+{
+    gunzip -c l4t_initrd.img | cpio -i
+    find . | cpio -H newc -o | gzip -9 -n > l4t_initrd.img
+}
+
+function flash_nvme()
+{
+    # 7023 for Jetson AGX Orin 
+    # 7019 for Jetson AGX Xavier.
+    # 7e19 for Jetson AGX Xavier.
+    local idProduct=7e19
+    local usb_info=`grep ${idProduct} /sys/bus/usb/devices/*/idProduct`
+    local usb_instance=`echo ${usb_info} | awk -F'/' '{print $6}' | tr -d '\n'`
+
+    pushd ${JETSON_SDK_HOME} > /dev/null 2>&1
+    sudo -E ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo" ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
         --usb-instance ${usb_instance} \
-        --device-instance 0 \
         --external-device nvme0n1p1 \
-        -c "tools/kernel_flash/flash_l4t_nvme.xml" \
+        -c "tools/kernel_flash/flash_l4t_external.xml" \
         --showlogs \
         --network usb0 \
         --flash-only \
@@ -206,7 +326,7 @@ function flash_nvme()
         --network usb0 \
         ${BOARD} \
         internal
-
+    popd > /dev/null
 }
 
 function flash_auto()
@@ -222,10 +342,9 @@ function flash_sd()
 
 function flash()
 {   
-    local flash_type=${1}           # "nvme" "sd" "auto"
-    local flash_only=${2}           # "on" "off"
+    local flash_type=${1}           # "nvme" "sd" "usb" "auto"
 
-    echo "Start Flash ${flash_type} Flash_only = ${flash_only}" 
+    echo "Start Flash Jetson ${flash_type}" 
 
     # Turn off USB mass storage during flashing
     sudo systemctl stop udisks2.service
@@ -233,9 +352,9 @@ function flash()
     pushd "${JETSON_SDK_HOME}" > /dev/null 2>&1
 
     if [ "${flash_type}" == "nvme" ]; then
-        flash_nvme ${flash_only}
+        flash_nvme
     elif [ "${flash_type}" == "sd" ]; then 
-        flash_sd ${flash_only}
+        flash_sd
     else 
         flash_auto
     fi
@@ -291,6 +410,7 @@ function install_kernel()
     cp -ardf "${JETSON_KERNEL_OUT}/arch/arm64/boot/Image" "${JETSON_SDK_HOME}/kernel/Image"
     
     pushd ${JETSON_KERNEL_OUT} > /dev/null 2>&1
+    [ -e "${JETSON_SDK_HOME}/kernel/kernel_supplements.tbz2" ] && rm -rf "${JETSON_SDK_HOME}/kernel/kernel_supplements.tbz2"
     tar --owner root --group root -cjf ${JETSON_SDK_HOME}/kernel/kernel_supplements.tbz2 ${JETSON_SDK_HOME}/rootfs/lib/modules
     popd > /dev/null 2>&1
     
@@ -320,7 +440,11 @@ function install_kernel()
 function create_user()
 {
     pushd "${JETSON_SDK_HOME}/tools/" > /dev/null 2>&1
-    sudo ./l4t_create_default_user.sh --username lw --password lw --hostname lw --accept-license
+    sudo ./l4t_create_default_user.sh \
+        --username ${USER_NAME} \
+        --password ${PASSWD} \
+        --hostname ${USER_NAME} \
+        --accept-license
     popd > /dev/null 2>&1
 }
 
@@ -347,10 +471,11 @@ function usage()
 cat <<EOF 
     Use: "${ScriptName}" 
         [ --install_sdk|-i <PATH> ] Install l4t SDK
-        [ --build_kernel ] Build Linux Kernel & Modules & Display Modules
+        [ --build_kernel ] Build Linux Kernel & Modules & Display Modulesx
+        [ --build_rootfs <is_custom> ] Build Rootfs is_custom: yes, no
+        [ --build_image <type> ] Build Flash Image type : nvme, sd, usb
         [ --install_kernel ] Install Linux Kernel & Modules & Display Modules To Flash Dir & Rootfs
-        [ --create_user|-u ] Create User To Rootfs
-        [ --flash|-f <type> <flash_only> ]  Flash Image To Jetson Device: type : nvme, sd, auto, flash_only: on, off
+        [ --flash|-f <type> ]  Flash Image To Jetson Device: type : nvme, sd, usb, auto
         [ --build_docker ] Build L4t Dev Docker Image
         [ --run_docker|-r ]  Run L4t Dev Docker
         [ --setup_env ] Install Dev Env Packages & Install Some L4t Package To Rootfs
@@ -359,39 +484,35 @@ EOF
 }
 
 if [ -f ${SDK_VARIABLE_F} ]; then
-    echo "Get Env File"
     source ${SDK_VARIABLE_F}
 fi
 
 # script name
 SCRIPT_NAME=$(basename "$0")
 GETOPT=`getopt -n "$SCRIPT_NAME" \
-    --longoptions help,install_sdk:,build_kernel,install_kernel,create_user,flash:,flash_only,build_docker,run_docker,setup_env \
-    -o hi:uf:r -- "$@"`
+    --longoptions help,install_sdk:,build_kernel,build_rootfs:,install_kernel,build_image:,flash:,flash_only,build_docker,run_docker,setup_env \
+    -o hi:f:r -- "$@"`
 if [ $? != 0 ]; then
     usage
     exit 1
 fi
 
 eval set -- "${GETOPT}"
-flash_only="off"
-flash_dev="auto"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	-h|--help) usage ${SCRIPT_NAME} && exit 0 ;;
 	-i|--install_sdk) install_sdk ${2} && exit 0 ;;
 	--build_kernel) build_kernel && exit 0 ;;
+	--build_rootfs) build_rootfs ${2} && exit 0 ;;
+	--build_image) build_image ${2} && exit 0 ;;
 	--install_kernel) install_kernel && exit 0 ;;
 	-r|--run_docker) run_docker && exit 0 ;;
 	--build_docker) build_docker && exit 0 ;;
-	--flash_only) flash_only="on" ;;
-	-u|--create_user) create_user && exit 0 ;;
 	--setup_env) setup_env && exit 0 ;;
-	-f|--flash) flash_dev=${2}; shift;;
+	-f|--flash) flash ${2}; shift;;
 	--) shift; break ;;
 	-*) echo "Unknown option: $@" >&2 ; usage "${SCRIPT_NAME}"; exit 1 ;;
 	esac
 	shift
 done
 
-flash ${flash_dev} ${flash_only}
