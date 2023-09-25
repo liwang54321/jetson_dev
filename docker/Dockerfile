@@ -23,7 +23,9 @@ RUN apt-get install -y tzdata \
 RUN apt install -y --no-install-recommends \
                 python3-pip \
                 python3-dev \
+                python-is-python3 \
                 fish \
+                rsync \
                 git \
                 tig \
                 lrzsz \
@@ -76,7 +78,7 @@ RUN apt install -y --no-install-recommends \
 
 # User
 RUN useradd -d "/home/${user_name}" -m \
-            -G "sudo,video,audio,adm" \
+            -G "sudo,video,audio,adm,dialout,docker" \
             -s "/bin/fish" \
             --no-log-init \
             -p ${user_name} \

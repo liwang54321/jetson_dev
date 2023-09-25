@@ -39,6 +39,7 @@ function set_variable()
     export ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo"
     export USER_NAME=lw
     export PASSWD=lw
+    # TegraID Xavier 0x19 Orin 0x23
 }
 
 function save_variable()
@@ -324,6 +325,7 @@ function flash_nvme()
         --flash-only \
         -S 64GiB \
         --network usb0 \
+        -S 64Gib
         ${BOARD} \
         internal
     popd > /dev/null
