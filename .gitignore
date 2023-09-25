@@ -2,7 +2,6 @@
 /hardware
 /Linux_for_Tegra
 /Linux_for_Tegra.tgz
-/opensrc
 /packages
 /toolchain
 /.sdk_variable.env

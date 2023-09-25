@@ -140,6 +140,7 @@ function __install_jetpack()
     sudo LC_ALL=C chroot . apt-key adv --fetch-key https://repo.download.nvidia.com/jetson/jetson-ota-public.asc
     sudo LC_ALL=C chroot . apt update
     sudo LC_ALL=C chroot . apt install --no-install-recommends -y nvidia-jetpack-runtime htop lrzsz
+    sudo LC_ALL=C chroot . pip3 install -U jetson-stats
     sudo LC_ALL=C chroot . usermod -aG docker ${USER_NAME}
 
     sudo LC_ALL=C chroot . sync
