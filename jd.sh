@@ -36,7 +36,6 @@ function set_variable()
     export BOARDSKU=0000
     export FAB=100
     export tegra194
-    export ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo"
     export USER_NAME=lw
     export PASSWD=lw
     # TegraID Xavier 0x19 Orin 0x23
@@ -71,7 +70,6 @@ export BOARDID=${BOARDID}
 export BOARDSKU=${BOARDSKU}
 export FAB=${FAB}
 export tegra194
-export ADDITIONAL_DTB_OVERLAY=BootOrderNvme.dtbo
 export USER_NAME=${USER_NAME}
 export PASSWD=${PASSWD}
 EOF
@@ -139,7 +137,7 @@ function __install_jetpack()
 
     sudo LC_ALL=C chroot . apt-key adv --fetch-key https://repo.download.nvidia.com/jetson/jetson-ota-public.asc
     sudo LC_ALL=C chroot . apt update
-    sudo LC_ALL=C chroot . apt install --no-install-recommends -y nvidia-jetpack-runtime htop lrzsz
+    sudo LC_ALL=C chroot . apt install --no-install-recommends -y nvidia-jetpack-runtime htop lrzsz network-manager
     sudo LC_ALL=C chroot . pip3 install -U jetson-stats
     sudo LC_ALL=C chroot . usermod -aG docker ${USER_NAME}
 
@@ -283,7 +281,7 @@ function build_image()
     echo "Start Build ${build_type} Image"
     pushd ${JETSON_SDK_HOME} > /dev/null 2>&1
     if [ ${build_type} == "nvme" ]; then
-        sudo -E ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo" ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
+        sudo -E ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
             --external-device nvme0n1p1 \
             -c tools/kernel_flash/flash_l4t_external.xml \
             --network usb0 \
@@ -294,7 +292,14 @@ function build_image()
             ${BOARD} \
             internal
     elif [ ${build_type} == "sd" ]; then 
-        echo "--sd"
+        sudo -E ./tools/kernel_flash/l4t_initrd_flash.sh \
+            --no-flash \
+            -c bootloader/t186ref/cfg/flash_l4t_t194_spi_sd_p3668.xml \
+            --network usb0 \
+            --showlogs \
+            -S 32GiB \
+            ${BOARD} \
+            mmcblk0p1
     elif [ ${build_type} == "usb" ]; then 
         echo "--usb"
     fi
@@ -307,42 +312,6 @@ function initramfs()
     find . | cpio -H newc -o | gzip -9 -n > l4t_initrd.img
 }
 
-function flash_nvme()
-{
-    # 7023 for Jetson AGX Orin 
-    # 7019 for Jetson AGX Xavier.
-    # 7e19 for Jetson AGX Xavier.
-    local idProduct=7e19
-    local usb_info=`grep ${idProduct} /sys/bus/usb/devices/*/idProduct`
-    local usb_instance=`echo ${usb_info} | awk -F'/' '{print $6}' | tr -d '\n'`
-
-    pushd ${JETSON_SDK_HOME} > /dev/null 2>&1
-    sudo -E ADDITIONAL_DTB_OVERLAY="BootOrderNvme.dtbo" ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
-        --usb-instance ${usb_instance} \
-        --external-device nvme0n1p1 \
-        -c "tools/kernel_flash/flash_l4t_external.xml" \
-        --showlogs \
-        --network usb0 \
-        --flash-only \
-        -S 64GiB \
-        --network usb0 \
-        -S 64Gib
-        ${BOARD} \
-        internal
-    popd > /dev/null
-}
-
-function flash_auto()
-{
-    echo "Auto Flash"
-    sudo ./nvsdkmanager_flash.sh --storage "${JETSON_STORAGE_TYPE}"
-}
-
-function flash_sd()
-{
-    echo "Flash SD Card"
-}
-
 function flash()
 {   
     local flash_type=${1}           # "nvme" "sd" "usb" "auto"
@@ -353,13 +322,43 @@ function flash()
     sudo systemctl stop udisks2.service
 
     pushd "${JETSON_SDK_HOME}" > /dev/null 2>&1
-
+    # 7023 for Jetson AGX Orin 
+    # 7019 for Jetson AGX Xavier.
+    # 7e19 for Jetson AGX Xavier.
+    local idProduct=7e19
+    local usb_info=`grep ${idProduct} /sys/bus/usb/devices/*/idProduct`
+    local usb_instance=`echo ${usb_info} | awk -F'/' '{print $6}' | tr -d '\n'`
+    
     if [ "${flash_type}" == "nvme" ]; then
-        flash_nvme
+        sudo -E ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
+            --usb-instance ${usb_instance} \
+            --external-device nvme0n1p1 \
+            -c "tools/kernel_flash/flash_l4t_external.xml" \
+            --showlogs \
+            --network usb0 \
+            --flash-only \
+            -S 64GiB \
+            --network usb0 \
+            -S 64Gib
+            ${BOARD} \
+            internal
     elif [ "${flash_type}" == "sd" ]; then 
-        flash_sd
+        sudo -E ./flash.sh \
+            -S 32GiB \
+            --usb-instance  ${usb_instance} \
+            ${BOARD} \
+            mmcblk0p1
+        # sudo -E ./tools/kernel_flash/l4t_initrd_flash.sh \
+        #     --usb-instance ${usb_instance} \
+        #     -c bootloader/t186ref/cfg/flash_l4t_t194_spi_sd_p3668.xml \
+        #     --flash-only \
+        #     --showlogs \
+        #     --network usb0 \
+        #     -S 32GiB \
+        #     ${BOARD} \
+        #     mmcblk0p1
     else 
-        flash_auto
+        sudo -E ./nvsdkmanager_flash.sh --storage "${JETSON_STORAGE_TYPE}"
     fi
     
     popd > /dev/null 2>&1
