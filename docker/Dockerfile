@@ -6,6 +6,8 @@ ARG user_name=lw
 ARG jetson_sdk=Jetson_Linux_R35.4.1_aarch64.tbz2
 ARG jetson_rootfs=Tegra_Linux_Sample-Root-Filesystem_R35.4.1_aarch64.tbz2
 
+
+ENV DEBIAN_FRONTEND noninteractive
 ENV TIME_ZONE Asia/Shanghai
 ENV LANG C.UTF-8
 
