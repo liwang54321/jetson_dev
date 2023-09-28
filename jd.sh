@@ -1,5 +1,5 @@
 #!/bin/bash
-
+source ./scripts/bash_log.sh
 set -e
 export DOCKER_VERSION=35.4.1
 export SDK_VARIABLE_F="./.sdk_variable.env"
@@ -77,7 +77,7 @@ EOF
 
 function remove_static_libs()
 {
-    echo "Start Remove Static Libs"
+    info "Start Remove Static Libs"
     pushd ${JETSON_ROOTFS} > /dev/null 2>&1
     sudo find -name lib*.a | xargs sudo rm 
     popd > /dev/null
@@ -85,16 +85,15 @@ function remove_static_libs()
 
 function strip_rootfs()
 {
-    echo "Start Strip Rootfs"
     pushd ${JETSON_ROOTFS} > /dev/null 2>&1
     sudo find -name lib*.so | xargs sudo ${CROSS_COMPILE_AARCH64}strip
-    sudo find -executable | xargs sudo ${CROSS_COMPILE_AARCH64}strip
+    find -type f -executable -exec file {} \; | grep "ELF" | cut -d: -f1 | xargs sudo ${CROSS_COMPILE_AARCH64}strip
     popd > /dev/null
 }
 
 function remove_include_file()
 {
-    echo "Start Remove Rootfs Include File"
+    info "Start Remove Rootfs Include File"
     pushd ${JETSON_ROOTFS} > /dev/null 2>&1
     sudo find -name *.h | xargs sudo rm 
     popd > /dev/null
@@ -132,15 +131,52 @@ function __install_jetpack()
         sudo cp /etc/resolv.conf etc/
     fi
 
+    info "Start Install Nvidia Key"
     sudo LC_ALL=C chroot . apt update
     sudo LC_ALL=C chroot . apt install --no-install-recommends -y gnupg2
-
     sudo LC_ALL=C chroot . apt-key adv --fetch-key https://repo.download.nvidia.com/jetson/jetson-ota-public.asc
+    
+    info "Start Install JetPack Runtime"
     sudo LC_ALL=C chroot . apt update
-    sudo LC_ALL=C chroot . apt install --no-install-recommends -y nvidia-jetpack-runtime htop lrzsz network-manager
-    sudo LC_ALL=C chroot . pip3 install -U jetson-stats
+    sudo LC_ALL=C chroot . apt install --no-install-recommends -y nvidia-jetpack-runtime htop lrzsz network-manager tree neovim
+    # sudo LC_ALL=C chroot . pip3 install -U jetson-stats
     sudo LC_ALL=C chroot . usermod -aG docker ${USER_NAME}
+    sudo LC_ALL=C chroot . chown ${USER_NAME}:${USER_NAME} /home/${USER_NAME} -R
+    
+    info "Start Update Apt"
+    sudo LC_ALL=C chroot . apt update
 
+    sudo LC_ALL=C chroot . /bin/bash
+
+    info "Start Remote Packages"
+    sudo LC_ALL=C chroot . apt remove -y --purge \
+        nvidia-l4t-kernel \
+        nvidia-l4t-vulkan-sc-samples \
+        nvidia-l4t-vulkan-sc-dev \
+        xserver-xorg-input-wacom \
+        xbitmaps \
+        libcrypt-dev
+
+    sudo LC_ALL=C chroot . sudo apt-mark manual \
+        cuda-cccl-11-4 \
+        cuda-cudart-dev-11-4 \
+        cuda-driver-dev-11-4 \
+        nvidia-l4t-camera \
+        nvidia-l4t-cuda \
+        nvidia-l4t-multimedia \
+        nvidia-l4t-multimedia-utils
+
+    sudo LC_ALL=C chroot . apt remove --purge -y \
+        libc6-dev \
+        libc-dev-bin \
+        linux-libc-dev \
+        libegl-dev \
+        libgl-dev \
+        nvidia-l4t-jetson-multimedia-api
+    
+    info "Start Auto Remove"
+    sudo LC_ALL=C chroot . apt autoremove -y
+    
     sudo LC_ALL=C chroot . sync
     sudo LC_ALL=C chroot . apt-get clean
     sudo LC_ALL=C chroot . sync
@@ -168,60 +204,73 @@ function __install_jetpack()
 function build_rootfs()
 {
     local is_customer=${1}
+    info "Start Remove Old Rootfs"
     sudo rm -rf ${JETSON_SDK_HOME}/rootfs/*
+
+    info "Start Install Rootfs"
     if [ ${is_customer} = "yes" ]; then
         local custom_rootfs=${JETSON_SDK_HOME}/tools/samplefs/sample_fs.tbz2
         [ ! -e ${custom_rootfs} ] && gen_base_rootfs
         
         sudo tar -xjf ${custom_rootfs} -C ${JETSON_ROOTFS}
     else
-        echo "Start Download Jetson Rootfs"
+        info "Start Download Jetson Rootfs"
         local rootfs_tgz=${JETSON_PACKAGE_PATH}/${SAMPLE_FS_PACKAGE}
         [ -d "${JETSON_PACKAGE_PATH}" ] || mkdir -p ${JETSON_PACKAGE_PATH}
         [ -f "${rootfs_tgz}" ] || \
         wget -P ${JETSON_PACKAGE_PATH} -N https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/release/${SAMPLE_FS_PACKAGE}
 
-        echo "Start Install Jetson Rootfs"
+        info "Start Install Jetson Rootfs"
         pushd "${JETSON_ROOTFS}" > /dev/null 2>&1
-        [ ! -e "${JETSON_ROOTFS}/bin" ] && sudo tarpf ${rootfs_tgz}
+        [ ! -e "${JETSON_ROOTFS}/bin" ] && sudo tar -xpf ${rootfs_tgz}
         export LDK_ROOTFS_DIR=$PWD
         popd > /dev/null 2>&1
 
     fi
+    info "Start Setup Rootfs Env"
     setup_env
+
+    info "Start Create User"
     create_user
+
+    info "Start Install Customer Layer"
     copy_customer_layer
+
+    info "Start Install Jetpack"
     __install_jetpack
+    
+    info "Start Strip Rootfs"
+    strip_rootfs
 }
 
 function install_sdk()
 {
-    [ $# != 1 ] && echo "Error: Input Install Path" && exit -1
+    [ $# != 1 ] && error "Error: Input Install Path" && exit -1
     set_variable $1
     save_variable
 
-    echo "Start Download ToolChain"
+    info "Start Download ToolChain"
     [ -d "${JETSON_PACKAGE_PATH}" ] || mkdir -p ${JETSON_PACKAGE_PATH}
     local toolchain_tgz=${JETSON_PACKAGE_PATH}/aarch64--glibc--stable-final.tar.gz
     [ -f "${toolchain_tgz}" ] || \
     wget -O ${toolchain_tgz} -N https://developer.nvidia.com/embedded/jetson-linux/bootlin-toolchain-gcc-93
     
-    echo "Start Download Jetson SDK"
+    info "Start Download Jetson SDK"
     local sdk_tgz=${JETSON_PACKAGE_PATH}/${L4T_RELEASE_PACKAGE}
     [ -f "${sdk_tgz}" ] || \
     wget -P ${JETSON_PACKAGE_PATH} -N https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/release/${L4T_RELEASE_PACKAGE}
     
-    echo "Start Download Jetson Kernel Source"
+    info "Start Download Jetson Kernel Source"
     [ -f "${JETSON_PACKAGE_PATH}/public_sources.tbz2" ] || \
     wget -N -P ${JETSON_PACKAGE_PATH} https://developer.nvidia.com/downloads/embedded/l4t/${SDK_VERSION}/sources/public_sources.tbz2
 
-    echo "Start Install ToolChain"
+    info "Start Install ToolChain"
     [ ! -d "${JETSON_TOOLCHAIN}" ] && mkdir -p "${JETSON_TOOLCHAIN}" && tar -xzf "${toolchain_tgz}" -C "${JETSON_TOOLCHAIN}"
 
-    echo "Start Install Jetson SDK"
+    info "Start Install Jetson SDK"
     [ ! -e "${JETSON_SDK_HOME}" ] && tar -xjf "${sdk_tgz}" -C "${JETSON_SDK_PATH}"
 
-    echo "Start Install Jetson Public Sources"
+    info "Start Install Jetson Public Sources"
     [ ! -d "${JETSON_SDK_HOME}/source/public" ] && \
     tar -xf ${JETSON_PACKAGE_PATH}/public_sources.tbz2 -C ${JETSON_SDK_PATH}
     pushd "${JETSON_SDK_HOME}/source/public" > /dev/null 2>&1
@@ -238,11 +287,11 @@ function setup_env()
 {
     pushd "${JETSON_SDK_HOME}" > /dev/null 2>&1
     # Copy NVIDIA user space libraries into target file system
-    echo "Start Install Rootfs Libraries"
+    info "Start Install Rootfs Libraries"
     sudo ./apply_binaries.sh --factory
 
     # Install the prerequisite dependencies for flashing
-    echo "Start Install Jetson Prerequisite"
+    info "Start Install Jetson Prerequisite"
     # sudo ./tools/l4t_flash_prerequisites.sh
     popd > /dev/null 2>&1
 }
@@ -250,7 +299,8 @@ function setup_env()
 function install_customer_layer()
 {
     # Install Customer Layer
-    [ ! -d "${JETSON_SDK_PATH}/customer_layer" ] && cp "${JETSON_SDK_PATH}/customer_layer/*" . -arfd
+    [ ! -d "${JETSON_SDK_PATH}/customer_layer" ] && \
+    cp "${JETSON_SDK_PATH}/customer_layer/*" . -arfd
 }
 
 function check_board()
@@ -261,24 +311,24 @@ function check_board()
         # There was an error with the Jetson connected
         # It may not be detectable, be in force recovery mode
         # Or there may be more than one Jetson in FRM 
-        echo "$FLASH_BOARDID" | grep Error
-        echo "Make sure that your Jetson is connected through"
-        echo "a USB port and in Force Recovery Mode"
+        error "$FLASH_BOARDID" | grep Error
+        error "Make sure that your Jetson is connected through"
+        error "a USB port and in Force Recovery Mode"
         exit 1
     fi
-    echo ${FLASH_BOARDID}
+    info ${FLASH_BOARDID}
     popd > /dev/null 2>&1
 }
 
 function flash_usb()
 {
-    echo "Start Flash Usb"
+    info "Start Flash Usb"
 }
 
 function build_image()
 {
     local build_type=${1}
-    echo "Start Build ${build_type} Image"
+    info "Start Build ${build_type} Image"
     pushd ${JETSON_SDK_HOME} > /dev/null 2>&1
     if [ ${build_type} == "nvme" ]; then
         sudo -E ADDITIONAL_DTB_OVERLAY_OPT="BootOrderNvme.dtbo" ./tools/kernel_flash/l4t_initrd_flash_internal.sh \
@@ -301,7 +351,7 @@ function build_image()
             ${BOARD} \
             mmcblk0p1
     elif [ ${build_type} == "usb" ]; then 
-        echo "--usb"
+        info "--usb"
     fi
     popd > /dev/null
 }
@@ -316,7 +366,7 @@ function flash()
 {   
     local flash_type=${1}           # "nvme" "sd" "usb" "auto"
 
-    echo "Start Flash Jetson ${flash_type}" 
+    info "Start Flash Jetson ${flash_type}" 
 
     # Turn off USB mass storage during flashing
     sudo systemctl stop udisks2.service
@@ -347,7 +397,7 @@ function flash()
             -S 32GiB \
             --usb-instance  ${usb_instance} \
             ${BOARD} \
-            mmcblk0p1
+            internal
         # sudo -E ./tools/kernel_flash/l4t_initrd_flash.sh \
         #     --usb-instance ${usb_instance} \
         #     -c bootloader/t186ref/cfg/flash_l4t_t194_spi_sd_p3668.xml \
@@ -371,7 +421,7 @@ function flash()
 
 function build_kernel()
 {
-    echo "Start Build Kernel Source"
+    info "Start Build Kernel Source"
     pushd "${JETSON_KERNEL}" > /dev/null 2>&1
     pushd kernel > /dev/null 2>&1
     bash -E ./kernel-5.10/scripts/rt-patch.sh apply-patches
@@ -380,7 +430,7 @@ function build_kernel()
     ./nvbuild.sh -o "${JETSON_KERNEL_OUT}"
     popd > /dev/null 2>&1
 
-    echo "Start Build Display Modules"
+    info "Start Build Display Modules"
     pushd "${JETSON_DISPLAY_MODULE}" > /dev/null 2>&1
 
     make \
@@ -396,6 +446,15 @@ function build_kernel()
       ARCH=arm64 \
       -j$(nproc)
 
+    make \
+        ARCH=arm64 \
+		LOCALVERSION="-tegra" \
+		CROSS_COMPILE="${CROSS_COMPILE_AARCH64}" \
+        -C "${JETSON_KERNEL}/kernel/kernel-5.10" \
+        O=${JETSON_KERNEL_OUT} \
+        -j$(nproc) \
+        modules_prepare
+
     popd > /dev/null 2>&1
 }
 
@@ -408,7 +467,7 @@ function install_base_rootfs()
 
 function install_kernel() 
 {
-    echo "Start Install Kernel Images"
+    info "Start Install Kernel Images"
     cp -ardf "${JETSON_KERNEL_OUT}/arch/arm64/boot/Image" "${JETSON_SDK_HOME}/kernel/Image"
     
     pushd ${JETSON_KERNEL_OUT} > /dev/null 2>&1
@@ -513,7 +572,7 @@ while [ $# -gt 0 ]; do
 	--setup_env) setup_env && exit 0 ;;
 	-f|--flash) flash ${2}; shift;;
 	--) shift; break ;;
-	-*) echo "Unknown option: $@" >&2 ; usage "${SCRIPT_NAME}"; exit 1 ;;
+	-*) warn "Unknown option: $@" >&2 ; usage "${SCRIPT_NAME}"; exit 1 ;;
 	esac
 	shift
 done
