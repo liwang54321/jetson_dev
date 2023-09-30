@@ -102,7 +102,8 @@ function gen_base_rootfs() {
 }
 
 function copy_customer_layer() {
-    sudo cp -arfd ${JETSON_SDK_PATH}/customer_layer/Linux_for_Tegra/rootfs/* ${JETSON_ROOTFS}
+    sudo cp -arfd ${JETSON_SDK_PATH}/customer_layer/Linux_for_Tegra/rootfs/* "${JETSON_ROOTFS}"
+    sudo cp -arfd ${JETSON_SDK_PATH}/customer_layer/Linux_for_Tegra/rootfs/* "${JETSON_ROOTFS}_dev"
 }
 
 function __modules_dep() {
@@ -149,10 +150,13 @@ function __kernel_config() {
 
 function __install_jetpack() {
     local is_dev=${1}
-    local rootfs=${JETSON_ROOTFS}
-    if [ ${is_dev} == "on" ]; then
-        rootfs=${JETSON_ROOTFS}_dev
+    local rootfs="${JETSON_ROOTFS}"
+    if [ ${is_dev} == "is_dev" ]; then
+        rootfs="${rootfs}_dev"
     fi
+
+    info "Start Build Rootfs ${rootfs}"
+    
     pushd "${rootfs}" >/dev/null 2>&1
     sudo cp /usr/bin/qemu-aarch64-static "${rootfs}/usr/bin/qemu-aarch64-static" -ardf
     sudo chmod 755 "${rootfs}/usr/bin/qemu-aarch64-static"
@@ -179,7 +183,7 @@ function __install_jetpack() {
     info "Start Install JetPack Runtime"
     sudo LC_ALL=C chroot . apt update
     local jetpack_name=nvidia-jetpack-runtime
-    if [ ${is_dev} == "on" ]; then
+    if [ ${is_dev} == "is_dev" ]; then
         jetpack_name=nvidia-jetpack
     fi
 
@@ -216,7 +220,7 @@ function __install_jetpack() {
     sudo LC_ALL=C chroot . apt remove -y --purge \
         nvidia-l4t-kernel
     
-    if [ ${is_dev} != "on" ]; then  
+    if [ ${is_dev} != "is_dev" ]; then  
         sudo LC_ALL=C chroot . apt remove -y --purge \
             nvidia-l4t-vulkan-sc-samples \
             nvidia-l4t-vulkan-sc-dev
@@ -258,7 +262,7 @@ function __install_jetpack() {
     sudo umount ./dev/pts
     sudo umount ./dev
 
-    sudo rm "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static"
+    sudo rm "${rootfs}/usr/bin/qemu-aarch64-static"
 
     sudo rm -rf var/lib/apt/lists/*
     sudo rm -rf dev/*
@@ -269,23 +273,47 @@ function __install_jetpack() {
     popd >/dev/null
 }
 
+function __check_errors() {
+    mountpoint -q "${JETSON_ROOTFS}/sys"
+    [ $? == 0 ] && sudo umount "${JETSON_ROOTFS}/sys"
+    mountpoint -q "${JETSON_ROOTFS}/proc"
+    [ $? == 0 ] && sudo umount "${JETSON_ROOTFS}/proc"
+    mountpoint -q "${JETSON_ROOTFS}/dev/pts"
+    [ $? == 0 ] && sudo umount "${JETSON_ROOTFS}/dev/pts"
+    mountpoint -q "${JETSON_ROOTFS}/dev"
+    [ $? == 0 ] && sudo umount "${JETSON_ROOTFS}/dev"
+
+    mountpoint -q "${JETSON_ROOTFS}_dev/sys"
+    [ $? == 0 ] && sudo umount "${JETSON_ROOTFS}_dev/sys"
+    mountpoint -q "${JETSON_ROOTFS}_dev/proc"
+    [ $? == 0 ] && sudo umount "${JETSON_ROOTFS}_dev/proc"
+    mountpoint -q "${JETSON_ROOTFS}_dev/dev/pts"
+    [ $? == 0 ] && sudo umount "${JETSON_ROOTFS}_dev/dev/pts"
+    mountpoint -q "${JETSON_ROOTFS}_dev/dev"
+    [ $? == 0 ] && sudo umount "${JETSON_ROOTFS}_dev/dev"
+}
+
 function build_rootfs() {
     local is_customer=${1}
+    local build_rootfs_dev=${2}
+    __check_errors
 
     info "Start Remove Old Rootfs"
-    [ "$(ls -A ${JETSON_ROOTFS})" ] && sudo rm -rf ${JETSON_ROOTFS}/*
-    [ "$(ls -A ${JETSON_ROOTFS}_dev)" ] && sudo rm -rf ${JETSON_ROOTFS}_dev/*
+    [ ! -d "${JETSON_ROOTFS}" ] && mkdir -p "${JETSON_ROOTFS}"
+    [ "$(ls -A ${JETSON_ROOTFS}_dev)" ] && sudo rm -rf ${JETSON_ROOTFS}/*
+
+    if [ ${build_rootfs_dev} == "yes" ]; then
+        [ ! -d "${JETSON_ROOTFS}_dev" ] && mkdir -p "${JETSON_ROOTFS}_dev"
+        [ "$(ls -A ${JETSON_ROOTFS}_dev)" ] && sudo rm -rf ${JETSON_ROOTFS}_dev/*
+    fi
 
     info "Start Install Rootfs"
     if [ ${is_customer} = "yes" ]; then
         local custom_rootfs=${JETSON_SDK_HOME}/tools/samplefs/sample_fs.tbz2
         [ ! -e ${custom_rootfs} ] && gen_base_rootfs
         
-        [ ! -e ${JETSON_ROOTFS} ] && mkdir -p ${JETSON_ROOTFS}
         sudo tar -xjf ${custom_rootfs} -C ${JETSON_ROOTFS}
-
-        [ ! -e ${JETSON_ROOTFS} ] && mkdir -p "${JETSON_ROOTFS}_dev"
-        sudo tar -xjf ${custom_rootfs} -C "${JETSON_ROOTFS}_dev"
+        [ ${build_rootfs_dev} == "yes" ] && sudo tar -xjf ${custom_rootfs} -C "${JETSON_ROOTFS}_dev"
     else
         info "Start Download Jetson Rootfs"
         local rootfs_tgz=${JETSON_PACKAGE_PATH}/${SAMPLE_FS_PACKAGE}
@@ -299,24 +327,26 @@ function build_rootfs() {
         export LDK_ROOTFS_DIR=$PWD
         popd >/dev/null 2>&1
 
-        pushd "${JETSON_ROOTFS}_dev" >/dev/null 2>&1
-        [ ! -e "${JETSON_ROOTFS}_dev/bin" ] && sudo tar -xpf ${rootfs_tgz}
-        popd >/dev/null 2>&1
-
-
+        if [ ${build_rootfs_dev} == "yes" ]; then
+            pushd "${JETSON_ROOTFS}_dev" >/dev/null 2>&1
+            [ ! -e "${JETSON_ROOTFS}_dev/bin" ] && sudo tar -xpf ${rootfs_tgz}
+            popd >/dev/null 2>&1
+        fi
     fi
-    info "Start Setup Rootfs Env"
-    setup_env
 
-    info "Start Create User"
-    create_user
+    # info "Start Setup Rootfs Env"
+    __setup_dev_env "no"
+    [ ${build_rootfs_dev} == "yes" ] && __setup_dev_env "yes"
+
+    # info "Start Create User"
+    create_user 
 
     info "Start Install Customer Layer"
     copy_customer_layer
 
     info "Start Install Jetpack"
-    __install_jetpack "on"
-    __install_jetpack "off"
+    __install_jetpack "is_dev"
+    __install_jetpack "not_dev"
 
     info "Start Install Kernel"
     install_kernel
@@ -402,11 +432,18 @@ function install_sdk() {
         tar -xf "${JETSON_PUBLIC_PACKAGE}/nvidia_kernel_display_driver_source.tbz2" -C "${JETSON_PUBLIC_SOURCE}"
 }
 
-function setup_env() {
+function __setup_dev_env() {
+    [ $# != 1 ] && error "Setup env Need Param" && exit -1
+
+    local build_dev=${1}
     pushd "${JETSON_SDK_HOME}" >/dev/null 2>&1
     # Copy NVIDIA user space libraries into target file system
     info "Start Install Rootfs Libraries"
-    sudo ./apply_binaries.sh --factory
+    if [ ${build_dev} == "yes" ]; then
+        sudo ./apply_binaries.sh --factory -r ${JETSON_ROOTFS}_dev
+    else
+        sudo ./apply_binaries.sh --factory 
+    fi
     popd >/dev/null 2>&1
 }
 
@@ -575,7 +612,7 @@ function build_kernel() {
     popd >/dev/null 2>&1
 }
 
-function install_base_rootfs() {
+function build_basic_rootfs() {
     pushd "${JETSON_SDK_HOME}tools/samplefs" >/dev/null 2>&1
     sudo ./nv_build_samplefs.sh --abi aarch64 --distro ubuntu --flavor basic --version focal
     popd >/dev/null 2>&1
@@ -614,7 +651,7 @@ function install_kernel() {
     __modules_dep
 }
 
-function create_user() {
+function __create_user() {
     pushd "${JETSON_SDK_HOME}/tools/" >/dev/null 2>&1
     sudo ./l4t_create_default_user.sh \
         --username ${USER_NAME} \
@@ -653,13 +690,13 @@ function usage() {
     Use: "${ScriptName}" 
         [ --install_sdk | -i <PATH> ] Install l4t SDK
         [ --build_kernel ] Build Linux Kernel & Modules & Display Modulesx
-        [ --build_rootfs <is_custom> ] Build Rootfs is_custom: yes, no
-        [ --build_image <type> ] Build Flash Image type : nvme, sd, usb
+        [ --build_rootfs <is_custom> ] Build Rootfs; is_custom: yes, no
+        [ --build_image <type> ] Build Flash Image; type : nvme, sd, usb
         [ --install_kernel ] Install Linux Kernel & Modules & Display Modules To Flash Dir & Rootfs
-        [ --flash | -f <type> ]  Flash Image To Jetson Device: type : nvme, sd, usb, auto
+        [ --flash | -f <type> ]  Flash Image To Jetson Device; type : nvme, sd, usb, auto
         [ --build_docker ] Build L4t Dev Docker Image
         [ --run_docker | -r ]  Run L4t Dev Docker
-        [ --setup_env ] Install Dev Env Packages & Install Some L4t Package To Rootfs
+        [ --setup_env ] Install Dev Env To Current Host PC
         [ --help | -h ] Print This Message
 EOF
 }
@@ -671,7 +708,7 @@ fi
 # script name
 SCRIPT_NAME=$(basename "$0")
 GETOPT=$(getopt -n "$SCRIPT_NAME" \
-    --longoptions help,install_sdk:,build_kernel,build_rootfs:,install_kernel,build_image:,flash:,flash_only,build_docker,run_docker,setup_env \
+    --longoptions help,install_sdk:,build_kernel,build_rootfs:,install_kernel,build_image:,flash:,flash_only,build_docker,run_docker,setup_env: \
     -o hi:f:r -- "$@")
 if [ $? != 0 ]; then
     usage
@@ -689,7 +726,7 @@ while [ $# -gt 0 ]; do
     --install_kernel) install_kernel && exit 0 ;;
     -r | --run_docker) run_docker && exit 0 ;;
     --build_docker) build_docker && exit 0 ;;
-    --setup_env) setup_env && exit 0 ;;
+    --setup_env) setup_env ${2} && exit 0 ;;
     -f | --flash)
         flash ${2}
         shift
