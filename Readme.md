@@ -5,6 +5,15 @@ https://docs.nvidia.com/jetson/archives/r35.4.1/DeveloperGuide/index.html
 - JetPack Doc
 https://docs.nvidia.com/jetson/jetpack/index.html
 
+- Jetson API Documents
+https://docs.nvidia.com/jetson/l4t-multimedia/index.html
+
+- Jetson Soft Documents
+https://docs.nvidia.com/jetson/index.html
+
+- Jetson VPI Documents
+https://docs.nvidia.com/vpi/index.html
+
 - Jetson Linux Download
 https://developer.nvidia.com/embedded/jetson-linux
 

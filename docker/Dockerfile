@@ -80,7 +80,7 @@ RUN apt install -y --no-install-recommends \
 
 # User
 RUN useradd -d "/home/${user_name}" -m \
-            -G "sudo,video,audio,adm,dialout,docker" \
+            -G "sudo,video,audio,adm,dialout" \
             -s "/bin/fish" \
             --no-log-init \
             -p ${user_name} \
@@ -99,7 +99,7 @@ RUN git config --global user.name ${user_name} \
     && git config --global http.postBuffer 1048576000 
 
 # cmake
-ARG cmake_version=3.27.4
+ARG cmake_version=3.27.6
 RUN wget -N https://github.com/Kitware/CMake/releases/download/v${cmake_version}/cmake-${cmake_version}.tar.gz
 RUN tar -xzf cmake-${cmake_version}.tar.gz -C .\
     && cd cmake-${cmake_version} \
@@ -122,10 +122,10 @@ RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
     && conan profile detect --force
 
 # Install JetPack
-RUN sudo apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc
-RUN sudo sh -c 'echo "\ndeb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list'
-
-RUN sudo apt update && \
+# FIXME: Need Proxy
+RUN sudo apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc && \
+    sudo sh -c 'echo "\ndeb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list' && \
+    sudo apt update && \
     sudo apt-get install cuda-cross-aarch64-11-4 cuda-cupti-cross-aarch64-11-4 \
         cuda-sanitizer-11-4 cuda-toolkit-11-4 libnvvpi2 nsight-compute-2022.2.1 \
         nsight-compute-addon-l4t-2022.2.1 nsight-graphics-for-embeddedlinux-2023.2.0.0 \

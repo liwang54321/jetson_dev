@@ -1,1 +1,1 @@
-docker/Jetson_ext_pin.jpg filter=lfs diff=lfs merge=lfs -text
+docker/Jetson_ext_gpio.jpg filter=lfs diff=lfs merge=lfs -text

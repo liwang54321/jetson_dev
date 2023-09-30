@@ -86,8 +86,9 @@ function remove_static_libs()
 function strip_rootfs()
 {
     pushd ${JETSON_ROOTFS} > /dev/null 2>&1
-    sudo find -name lib*.so | xargs sudo ${CROSS_COMPILE_AARCH64}strip
-    find -type f -executable -exec file {} \; | grep "ELF" | cut -d: -f1 | xargs sudo ${CROSS_COMPILE_AARCH64}strip
+    sudo find -name "lib*.so" | xargs sudo ${CROSS_COMPILE_AARCH64}strip
+    sudo find -name "lib*.so.*" | xargs sudo ${CROSS_COMPILE_AARCH64}strip
+    sudo find -type f -executable -exec file {} \; | grep "ELF" | cut -d: -f1 | xargs sudo ${CROSS_COMPILE_AARCH64}strip
     popd > /dev/null
 }
 
@@ -109,6 +110,49 @@ function gen_base_rootfs()
 function copy_customer_layer()
 {
     sudo cp -arfd ${JETSON_SDK_PATH}/customer_layer/Linux_for_Tegra/rootfs/* ${JETSON_ROOTFS}
+}
+
+function __modules_dep()
+{
+    sudo cp "${JETSON_KERNEL_OUT}/System.map" "${JETSON_ROOTFS}"
+    sudo install --owner=root --group=root "/usr/bin/qemu-aarch64-static" "${JETSON_ROOTFS}/usr/bin/"
+    pushd ${JETSON_ROOTFS} > /dev/null 2>&1
+    LC_ALL=C sudo chroot . depmod -a -F System.map ${JETSON_KERNEL_VERSION}
+    popd > /dev/null
+    sudo rm ${JETSON_ROOTFS}/System.map -rf
+    sudo rm -f "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static"
+}
+
+function __kernel_config() {
+    local kernel_config_tool=${JETSON_KERNEL}/kernel/kernel-5.10/scripts/config
+    local kernel_defconfig_file=${JETSON_KERNEL}/kernel/kernel-5.10/arch/arm64/configs/tegra_defconfig
+    enable_config_items=(
+
+    )
+    module_config_items=(
+        "CONFIG_FUSE_FS"
+        "CONFIG_VFAT_FS"
+        "CONFIG_NTFS_FS"
+    )
+    disable_config_items=(
+        "CONFIG_SND_SOC_TEGRA_ALT"
+        "CONFIG_SND_SOC_TEGRA_ALT_FORCE_CARD_REG"
+        "CONFIG_SND_SOC_TEGRA_T186REF_ALT"
+        "CONFIG_SND_SOC_TEGRA_T186REF_MOBILE_ALT"
+    )
+
+    for item in "${enable_config_items[@]}"; do
+        ${kernel_config_tool} --file "${kernel_defconfig_file}" --enable ${item}
+    done
+
+    for item in "${module_config_items[@]}"; do
+        ${kernel_config_tool} --file "${kernel_defconfig_file}" --module ${item}
+    done
+
+    for item in "${disable_config_items[@]}"; do
+        ${kernel_config_tool} --file "${kernel_defconfig_file}" --disable ${item}
+    done
+
 }
 
 function __install_jetpack()
@@ -138,7 +182,17 @@ function __install_jetpack()
     
     info "Start Install JetPack Runtime"
     sudo LC_ALL=C chroot . apt update
-    sudo LC_ALL=C chroot . apt install --no-install-recommends -y nvidia-jetpack-runtime htop lrzsz network-manager tree neovim
+    sudo LC_ALL=C chroot . apt install --no-install-recommends -y \
+        nvidia-jetpack-runtime \
+        htop \
+        lrzsz \
+        network-manager \
+        tree \
+        neovim \
+        bc \
+        wireless-tools \
+        iw
+        
     # sudo LC_ALL=C chroot . pip3 install -U jetson-stats
     sudo LC_ALL=C chroot . usermod -aG docker ${USER_NAME}
     sudo LC_ALL=C chroot . chown ${USER_NAME}:${USER_NAME} /home/${USER_NAME} -R
@@ -146,33 +200,33 @@ function __install_jetpack()
     info "Start Update Apt"
     sudo LC_ALL=C chroot . apt update
 
-    sudo LC_ALL=C chroot . /bin/bash
+    # sudo LC_ALL=C chroot . /bin/bash
 
     info "Start Remote Packages"
     sudo LC_ALL=C chroot . apt remove -y --purge \
         nvidia-l4t-kernel \
         nvidia-l4t-vulkan-sc-samples \
-        nvidia-l4t-vulkan-sc-dev \
-        xserver-xorg-input-wacom \
-        xbitmaps \
-        libcrypt-dev
+        nvidia-l4t-vulkan-sc-dev 
 
-    sudo LC_ALL=C chroot . sudo apt-mark manual \
-        cuda-cccl-11-4 \
-        cuda-cudart-dev-11-4 \
-        cuda-driver-dev-11-4 \
-        nvidia-l4t-camera \
-        nvidia-l4t-cuda \
-        nvidia-l4t-multimedia \
-        nvidia-l4t-multimedia-utils
+    # sudo LC_ALL=C chroot . sudo apt-mark manual \
+    #     cuda-cccl-11-4 \
+    #     cuda-cudart-dev-11-4 \
+    #     cuda-driver-dev-11-4 \
+    #     nvidia-l4t-camera \
+    #     nvidia-l4t-cuda \
+    #     nvidia-l4t-multimedia \
+    #     nvidia-l4t-multimedia-utils
 
-    sudo LC_ALL=C chroot . apt remove --purge -y \
-        libc6-dev \
-        libc-dev-bin \
-        linux-libc-dev \
-        libegl-dev \
-        libgl-dev \
-        nvidia-l4t-jetson-multimedia-api
+    # sudo LC_ALL=C chroot . apt remove --purge -y \
+    #     libc6-dev \
+    #     libcrypt-dev \
+    #     libc-dev-bin \
+    #     linux-libc-dev \
+    #     libegl-dev \
+    #     libgl-dev \
+    #     nvidia-l4t-jetson-multimedia-api \
+    #     xserver-xorg-input-wacom \
+    #     xbitmaps 
     
     info "Start Auto Remove"
     sudo LC_ALL=C chroot . apt autoremove -y
@@ -238,9 +292,49 @@ function build_rootfs()
 
     info "Start Install Jetpack"
     __install_jetpack
+
+    info "Start Install Kernel"
+    install_kernel
+
+    info "Start Modules Dep"
+    __modules_dep
     
     info "Start Strip Rootfs"
     strip_rootfs
+}
+
+function build_public_src()
+{
+    pushd ${JETSON_PUBLIC_PACKAGE} > /dev/null 2>&1
+    CROSS_COMPILE_AARCH64=${CROSS_COMPILE_AARCH64} \
+    CROSS_COMPILE_AARCH64_PATH=${CROSS_COMPILE_AARCH64_PATH} \
+    NV_TARGET_BOARD=t186ref \
+    ./nv_public_src_build.sh
+    popd > /dev/null
+
+    pushd ${JETSON_PUBLIC_PACKAGE} > /dev/null 2>&1
+    tar -I lbzip2 -xf nvidia-jetson-optee-source.tbz2
+    
+    # Xavier
+    CROSS_COMPILE_AARCH64=${CROSS_COMPILE_AARCH64} \
+    CROSS_COMPILE_AARCH64_PATH=${CROSS_COMPILE_AARCH64_PATH} \
+    PYTHON3_PATH="/usr/local/bin/python3" \
+    UEFI_STMM_PATH=${JETSON_SDK_HOME}/bootloader/standalonemm_optee_t194.bin \
+    ./optee_src_build.sh -p t194
+    
+    # Orin 
+    # CROSS_COMPILE_AARCH64=${CROSS_COMPILE_AARCH64} \
+    # CROSS_COMPILE_AARCH64_PATH=${CROSS_COMPILE_AARCH64_PATH} \
+    # PYTHON3_PATH="/usr/local/bin/python3" \
+    # UEFI_STMM_PATH=/Linux_for_Tegra/bootloader/standalonemm_optee_t234.bin \
+    # ./optee_src_build.sh -p t234
+
+    popd > /dev/null
+}
+
+function build_uefi()
+{
+    
 }
 
 function install_sdk()
@@ -358,8 +452,8 @@ function build_image()
 
 function initramfs()
 {
-    gunzip -c l4t_initrd.img | cpio -i
-    find . | cpio -H newc -o | gzip -9 -n > l4t_initrd.img
+    sudo gunzip -c l4t_initrd.img | sudo cpio -i
+    sudo find . | sudo cpio -H newc -o | sudo gzip -9 -n > l4t_initrd.img
 }
 
 function flash()
@@ -394,6 +488,7 @@ function flash()
             internal
     elif [ "${flash_type}" == "sd" ]; then 
         sudo -E ./flash.sh \
+            -k APP \
             -S 32GiB \
             --usb-instance  ${usb_instance} \
             ${BOARD} \
@@ -412,15 +507,16 @@ function flash()
     fi
     
     popd > /dev/null 2>&1
-    
-    
 
     # sudo -E ./flash.sh --no-systemimg -r -S 32GiB ${BOARD} external
 
 }
 
 function build_kernel()
-{
+{   
+    info "Start Modify Kernel Config"
+    __kernel_config
+
     info "Start Build Kernel Source"
     pushd "${JETSON_KERNEL}" > /dev/null 2>&1
     pushd kernel > /dev/null 2>&1
@@ -496,6 +592,7 @@ function install_kernel()
     sudo cp -arfd ${JETSON_DISPLAY_MODULE}/kernel-open/{nvidia-drm.ko,nvidia.ko,nvidia-modeset.ko} \
     ${JETSON_SDK_HOME}/rootfs/usr/lib/modules/${JETSON_KERNEL_VERSION}/extra/opensrc-disp/
 
+    __modules_dep
 }
 
 function create_user()
@@ -523,7 +620,14 @@ function build_docker()
 {
     cp `basename $0` docker/files -ardf
     docker build ./docker -t jetson_dev:${DOCKER_VERSION}
-    run_docker bash /l4t/jd.sh --install_sdk /l4t
+    # run_docker bash /l4t/jd.sh --install_sdk /l4t
+}
+
+function build_app()
+{
+    local app_build="${JETSON_SDK_PATH}/build/application"
+    [ ! -d ${app_build} ] && mkdir -p ${app_build}
+    cmake -B ${app_build} -S "${JETSON_SDK_PATH}/application"
 }
 
 function usage()
