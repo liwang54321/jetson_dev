@@ -21,10 +21,8 @@ https://developer.nvidia.com/embedded/jetson-linux
 https://developer.nvidia.com/embedded/jetpack
 
 # TODO
-- Add SD Card Image partitions
-- Add minimal rootfs 
-    - https://docs.nvidia.com/jetson/archives/r35.4.1/DeveloperGuide/text/SD/StorageOptimization.html
-    - https://nvidia-ai-iot.github.io/jetson-min-disk/
+- Add Cross Compiler Envriment
+
 
 # Device Usb Num
 ```bash
