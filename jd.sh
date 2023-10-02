@@ -121,7 +121,7 @@ function __modules_dep() {
 function __gen_rootfs_version() {
     sudo install --owner=root --group=root "/usr/bin/qemu-aarch64-static" "${JETSON_ROOTFS}/usr/bin/"
     pushd ${JETSON_ROOTFS} >/dev/null 2>&1
-    LC_ALL=C sudo chroot . dpkg -l > rootfs_version.txt
+    LC_ALL=C sudo chroot . bash -c "dpkg -l > rootfs_version.txt"
     popd >/dev/null
     sudo rm -f "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static"
 }
@@ -693,21 +693,31 @@ function build_docker() {
     # run_docker bash /l4t/jd.sh --install_sdk /l4t
 }
 
-function build_app() {
-    local need_clear=${1} # yes or no
-    local is_verbose=${2} # yes or no
-    local is_debug=${3}   # yes or no
-
+function config_app() {
+    local is_debug=${1}
     local app_build="${JETSON_SDK_PATH}/build/application"
     [ ! -d ${app_build} ] && mkdir -p ${app_build}
+    conan install ${JETSON_SDK_PATH}/application/conanfile.py \
+        -pr:h=${JETSON_SDK_PATH}/scripts/conan_jetson \
+        -pr:b=${JETSON_SDK_PATH}/scripts/conan_x86 \
+        --output-folder=${app_build} \
+        --build=missing
 
-    if [[ ${need_clear} == "yes" || -z "$(ls -A ${app_build})" ]]; then
-        cmake \
-            -B ${app_build} \
-            -S "${JETSON_SDK_PATH}/application" \
-            -DCMAKE_TOOLCHAIN_FILE=${JETSON_SDK_PATH}/scripts/toolchain_aarch64.cmake
+    cmake \
+        -B ${app_build} \
+        -S "${JETSON_SDK_PATH}/application" \
+        -DCMAKE_TOOLCHAIN_FILE=${JETSON_SDK_PATH}/scripts/toolchain_aarch64.cmake
+}
+
+function build_app() {
+    local is_verbose=${1} # yes or no
+
+    local app_build="${JETSON_SDK_PATH}/build/application"
+    if [ ${is_verbose} == "yes" ]; then
+        cmake --build ${app_build} -j$(nproc) VERBOSE=1
+    else
+        cmake --build ${app_build} -j$(nproc)
     fi
-    cmake --build ${app_build} -j$(nproc)
 }
 
 function usage() {
@@ -716,6 +726,7 @@ function usage() {
     Use: "${ScriptName}" 
         [ --install_sdk <path> | -i <path> ] Install l4t SDK
             path: sdk install path 
+        [ --config_app | -c ] Config Application
         [ --build_app |  -b ] Build Application
         [ --build_kernel ] Build Linux Kernel & Modules & Display Modulesx
         [ --build_rootfs <is_custom> <need_dev> ] Build Rootfs; 
@@ -746,6 +757,10 @@ function parse_args() {
             ;;
         -i | --install_sdk)
             install_sdk ${2}
+            exit 0
+            ;;
+        --config_app)
+            config_app
             exit 0
             ;;
         --build_app)

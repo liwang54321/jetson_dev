@@ -5,3 +5,4 @@
 /packages
 /toolchain
 /.sdk_variable.env
+/application/CMakeUserPresets.json
