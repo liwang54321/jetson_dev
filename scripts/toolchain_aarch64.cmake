@@ -25,10 +25,13 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_VERSION 1)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 
 set(target_arch aarch64-linux-gnu)
 set(CMAKE_LIBRARY_ARCHITECTURE ${target_arch} CACHE STRING "" FORCE)
+
+set(rootfs_path ${CMAKE_CURRENT_SOURCE_DIR}/../Linux_for_Tegra/rootfs_dev)
 
 # Configure cmake to look for libraries, include directories and
 # packages inside the target root prefix.
@@ -36,26 +39,54 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
-set(CMAKE_FIND_ROOT_PATH "/usr/${target_arch}")
+
+set(CMAKE_FIND_ROOT_PATH  ${rootfs_path})
+include_directories(BEFORE SYSTEM ${rootfs_path}/usr/include)
+
+# setup compiler for cross-compilation
+set(CMAKE_CXX_FLAGS           "-fPIC"               CACHE STRING "c++ flags")
+set(CMAKE_C_FLAGS             "-fPIC"               CACHE STRING "c flags")
+set(CMAKE_SHARED_LINKER_FLAGS ""                    CACHE STRING "shared linker flags")
+set(CMAKE_MODULE_LINKER_FLAGS ""                    CACHE STRING "module linker flags")
+set(CMAKE_EXE_LINKER_FLAGS    ""                    CACHE STRING "executable linker flags")
 
 # needed to avoid doing some more strict compiler checks that
 # are failing when cross-compiling
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 # specify the toolchain programs
-find_program(CMAKE_C_COMPILER ${target_arch}-gcc)
-find_program(CMAKE_CXX_COMPILER ${target_arch}-g++)
-if(NOT CMAKE_C_COMPILER OR NOT CMAKE_CXX_COMPILER)
-    message(FATAL_ERROR "Can't find suitable C/C++ cross compiler for ${target_arch}")
-endif()
+set(CMAKE_C_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/bin/aarch64-buildroot-linux-gnu-gcc)
+set(CMAKE_CXX_COMPILER ${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/bin/aarch64-buildroot-linux-gnu-g++)
+set(CMAKE_AR ${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/bin/aarch64-buildroot-linux-gnu-ar)
+set(CMAKE_RANLIB ${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/bin/aarch64-buildroot-linux-gnu-ranlib)
+set(CMAKE_LINKER ${CMAKE_CURRENT_SOURCE_DIR}/../toolchain/bin/aarch64-buildroot-linux-gnu-ld)
 
-set(CMAKE_AR ${target_arch}-ar CACHE FILEPATH "" FORCE)
-set(CMAKE_RANLIB ${target_arch}-ranlib)
-set(CMAKE_LINKER ${target_arch}-ld)
 
 # Not all shared libraries dependencies are instaled in host machine.
 # Make sure linker doesn't complain.
 set(CMAKE_EXE_LINKER_FLAGS_INIT -Wl,--allow-shlib-undefined)
+
+# For Cuda
+if (DEFINED CUDA_DIR)
+    if((DEFINED CUDA_TOOLKIT_ROOT_DIR) AND (NOT CUDA_TOOLKIT_ROOT_DIR STREQUAL CUDA_DIR))
+        message(FATAL_ERROR "Cannot set both CUDA_DIR and (legacy) CUDA_TOOLKIT_ROOT_DIR")
+    endif()
+elseif (DEFINED ENV{CUDA_INSTALL_DIR})
+    set(CUDA_DIR $ENV{CUDA_INSTALL_DIR})
+else()
+    set(CUDA_DIR  "/usr/local/cuda/" CACHE PATH "CUDA Toolkit location.")
+endif()
+
+if(NOT CMAKE_CUDA_COMPILER)
+    set(CMAKE_CUDA_COMPILER ${CUDA_DIR}/bin/nvcc)
+endif()
+
+set(CMAKE_CUDA_HOST_LINK_LAUNCHER       ${CUDA_DIR}/bin/nvcc)
+set(CUDA_LIBRARY_DIRS                   ${CUDA_DIR}/targets/aarch64-linux/lib)
+set(CMAKE_EXE_LINKER_FLAGS              "-L${CUDA_LIBRARY_DIRS} -Wl,-rpath-link,${CUDA_LIBRARY_DIRS}  ${CMAKE_EXE_LINKER_FLAGS}")
+set(CMAKE_CUDA_HOST_COMPILER            ${CMAKE_CXX_COMPILER})
+set(CUDA_INCLUDE_DIRS                   ${CUDA_DIR}/targets/aarch64-linux/include)
+
 
 # instruct nvcc to use our cross-compiler
 set(CMAKE_CUDA_FLAGS "-ccbin ${CMAKE_CXX_COMPILER} -Xcompiler -fPIC" CACHE STRING "" FORCE)

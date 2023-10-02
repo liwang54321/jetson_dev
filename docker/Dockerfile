@@ -77,7 +77,6 @@ RUN apt install -y --no-install-recommends \
                 kmod \
                 gnupg2
 
-
 # User
 RUN useradd -d "/home/${user_name}" -m \
             -G "sudo,video,audio,adm,dialout" \
@@ -121,8 +120,12 @@ RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
     && sudo pip3 install --upgrade conan \
     && conan profile detect --force
 
-# Install JetPack
-# FIXME: Need Proxy
+
+# Jetson Specific Packages
+RUN apt install -y --no-install-recommends \ 
+    whiptail
+
+# Install JetPack; FIXME: Need Proxy
 RUN sudo apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc && \
     sudo sh -c 'echo "\ndeb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list' && \
     sudo apt update && \
