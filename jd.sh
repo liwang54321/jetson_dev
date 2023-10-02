@@ -681,6 +681,9 @@ function run_docker() {
             jetson_dev:${DOCKER_VERSION}
     fi
 
+    if ! docker ps -qf "name=$docker_name" | grep -q . ; then
+        docker start ${docker_name}
+    fi
     docker exec -it ${docker_name} fish
 }
 
