@@ -221,11 +221,24 @@ function __install_jetpack() {
 
     # sudo LC_ALL=C chroot . pip3 install -U jetson-stats
     sudo LC_ALL=C chroot . chown ${USER_NAME}:${USER_NAME} /home/${USER_NAME} -R
+    # for system monitor tasks, can read log file in /var/log
+    sudo LC_ALL=C chroot . usermod -aG adm ${USER_NAME}
+    # docker group
     sudo LC_ALL=C chroot . usermod -aG docker ${USER_NAME}
+    # can control gpio
     sudo LC_ALL=C chroot . usermod -aG gpio ${USER_NAME}
+    # can access to serial ports
     sudo LC_ALL=C chroot . usermod -aG dialout ${USER_NAME}
     sudo LC_ALL=C chroot . usermod -aG trusty ${USER_NAME}
     sudo LC_ALL=C chroot . usermod -aG crypto ${USER_NAME}
+    # can mount device DriveOrin
+    sudo LC_ALL=C chroot . usermod -aG plugdev ${USER_NAME}
+    # sudo Group
+    sudo LC_ALL=C chroot . usermod -aG sudo ${USER_NAME}
+    # can access video device DriveOrin
+    sudo LC_ALL=C chroot . usermod -aG video ${USER_NAME}
+    # access to profile and debug data for GPUs DriveOrin
+    sudo LC_ALL=C chroot . usermod -ag debug ${USER_NAME}
 
     info "Start Update Apt"
     sudo LC_ALL=C chroot . apt update
