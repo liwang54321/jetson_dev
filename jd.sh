@@ -1,8 +1,14 @@
 #!/bin/bash
+top_dir=$(dirname $(readlink -f $0))
+script_name=$(basename $0)
+
+proxy_ip="192.168.0.104"
+proxy_port=20071
+
 source ./scripts/bash_log.sh
 set -e
 export DOCKER_VERSION=35.4.1
-export SDK_VARIABLE_F="./.sdk_variable.env"
+export SDK_VARIABLE_F="${top_dir}/.sdk_variable.env"
 
 function set_variable() {
     local sdk_home=$1
@@ -158,20 +164,50 @@ function __kernel_config() {
 
 }
 
-function __install_jetpack() {
-    local is_dev=${1} # "yes" or "no"
-    [ ${is_dev} == "yes" ] && info "Start Build Dev Rootfs"
-
-    info "Start Build Rootfs ${JETSON_ROOTFS}"
-
+function __entry_rootfs_dev() {
     pushd "${JETSON_ROOTFS}" >/dev/null 2>&1
     sudo cp /usr/bin/qemu-aarch64-static "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static" -ardf
     sudo chmod 755 "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static"
 
-    sudo mount /sys ./sys -o bind
-    sudo mount /proc ./proc -o bind
-    sudo mount /dev ./dev -o bind
-    sudo mount /dev/pts ./dev/pts -o bind
+    # sudo mount /sys ./sys -o bind
+    # sudo mount /proc ./proc -o bind
+    # sudo mount /dev ./dev -o bind
+    # sudo mount /dev/pts ./dev/pts -o bind
+}
+
+function __exit_rootfs_dev() {
+    sudo LC_ALL=C chroot . apt autoremove -y
+    sudo LC_ALL=C chroot . sync
+    sudo LC_ALL=C chroot . apt-get clean
+    sudo LC_ALL=C chroot . sync
+
+    if [ -s etc/resolv.conf.saved ]; then
+        sudo mv etc/resolv.conf.saved etc/resolv.conf
+    fi
+
+    # sudo umount ./sys
+    # sudo umount ./proc
+    # sudo umount ./dev/pts
+    # sudo umount ./dev
+
+    sudo rm "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static"
+
+    sudo rm -rf var/lib/apt/lists/*
+    sudo rm -rf dev/*
+    sudo rm -rf var/log/*
+    sudo rm -rf var/cache/apt/archives/*.deb
+    sudo rm -rf var/tmp/*
+    sudo rm -rf tmp/*
+    popd >/dev/null
+}
+
+function __install_jetpack() {
+    __entry_rootfs_dev
+
+    local is_dev=${1}               # "yes" or "no"
+    [ ${is_dev} == "yes" ] && info "Start Build Dev Rootfs"
+
+    info "Start Build Rootfs ${JETSON_ROOTFS}"
 
     if [ -s etc/resolv.conf ]; then
         sudo mv etc/resolv.conf etc/resolv.conf.saved
@@ -199,24 +235,17 @@ function __install_jetpack() {
     sudo LC_ALL=C chroot . apt install --no-install-recommends -y \
         ${jetpack_pkgs} \
         network-manager \
-        tree \
-        bc \
-        wireless-tools \
-        iw
+        tree bc \
+        wireless-tools iw
 
     # Install Debug Tools
     sudo LC_ALL=C chroot . apt install --no-install-recommends -y \
         neovim \
-        lrzsz \
-        htop \
-        i2c-tools \
-        v4l-utils \
-        lsof \
-        file
+        lrzsz lsof file htop \
+        i2c-tools v4l-utils
 
     if [ ${is_dev} == "yes" ]; then
-        sudo LC_ALL=C chroot . apt install --no-install-recommends -y \
-            python3-pip
+        sudo LC_ALL=C chroot . apt install --no-install-recommends -y python3-pip
     fi
 
     # sudo LC_ALL=C chroot . pip3 install -U jetson-stats
@@ -240,10 +269,8 @@ function __install_jetpack() {
     # access to profile and debug data for GPUs DriveOrin
     sudo LC_ALL=C chroot . usermod -ag debug ${USER_NAME}
 
-    info "Start Update Apt"
-    sudo LC_ALL=C chroot . apt update
-
-    # sudo LC_ALL=C chroot . /bin/bash
+    # Debug
+    sudo LC_ALL=C chroot . /bin/bash
 
     info "Start Remote Packages"
     sudo LC_ALL=C chroot . apt remove -y --purge \
@@ -255,51 +282,7 @@ function __install_jetpack() {
             nvidia-l4t-vulkan-sc-dev
     fi
 
-    # sudo LC_ALL=C chroot . sudo apt-mark manual \
-    #     cuda-cccl-11-4 \
-    #     cuda-cudart-dev-11-4 \
-    #     cuda-driver-dev-11-4 \
-    #     nvidia-l4t-camera \
-    #     nvidia-l4t-cuda \
-    #     nvidia-l4t-multimedia \
-    #     nvidia-l4t-multimedia-utils
-
-    # sudo LC_ALL=C chroot . apt remove --purge -y \
-    #     libc6-dev \
-    #     libcrypt-dev \
-    #     libc-dev-bin \
-    #     linux-libc-dev \
-    #     libegl-dev \
-    #     libgl-dev \
-    #     nvidia-l4t-jetson-multimedia-api \
-    #     xserver-xorg-input-wacom \
-    #     xbitmaps
-
-    info "Start Auto Remove"
-    sudo LC_ALL=C chroot . apt autoremove -y
-
-    sudo LC_ALL=C chroot . sync
-    sudo LC_ALL=C chroot . apt-get clean
-    sudo LC_ALL=C chroot . sync
-
-    if [ -s etc/resolv.conf.saved ]; then
-        sudo mv etc/resolv.conf.saved etc/resolv.conf
-    fi
-
-    sudo umount ./sys
-    sudo umount ./proc
-    sudo umount ./dev/pts
-    sudo umount ./dev
-
-    sudo rm "${JETSON_ROOTFS}/usr/bin/qemu-aarch64-static"
-
-    sudo rm -rf var/lib/apt/lists/*
-    sudo rm -rf dev/*
-    sudo rm -rf var/log/*
-    sudo rm -rf var/cache/apt/archives/*.deb
-    sudo rm -rf var/tmp/*
-    sudo rm -rf tmp/*
-    popd >/dev/null
+    __exit_rootfs_dev
 }
 
 function __check_errors() {
@@ -334,7 +317,7 @@ function __build_rootfs_impl() {
         info "Start Install Jetson Rootfs"
         pushd "${JETSON_ROOTFS}" >/dev/null 2>&1
         [ ! -e "${JETSON_ROOTFS}/bin" ] && sudo tar -xpf ${rootfs_tgz}
-        export LDK_ROOTFS_DIR=$PWD
+        export LDK_ROOTFS_DIR=${PWD}
         popd >/dev/null 2>&1
     fi
 
@@ -363,21 +346,52 @@ function __build_rootfs_impl() {
 
 }
 
+function __install_ros2() {
+    __entry_rootfs_dev
+
+    sudo LC_ALL=C chroot . apt install -y --no-install-recommends python3-pip curl liblttng-ust1 libspdlog1
+    sudo LC_ALL=C chroot . curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+    sudo LC_ALL=C chroot . echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+    sudo LC_ALL=C chroot . pip3 install packaging
+    
+    local ros2_path=/tmp/ros2.tar.bz2
+    [ ! -e ${ros2_path} ] && wget -N https://github.com/ros2/ros2/releases/download/release-iron-20230912/ros2-iron-20230912-linux-jammy-arm64.tar.bz2 -O ${ros2_path}
+    tar -xjf ${ros2_path} -C ${JETSON_ROOTFS}/home/${username}
+    rm ${ros2_path} -rf
+
+    sudo LC_ALL=C chroot . apt update
+    sudo LC_ALL=C chroot . apt install -y --no-install-recommends python3-rosdep
+    sudo LC_ALL=C chroot . sudo rosdep init
+    sudo LC_ALL=C chroot . rosdep update
+    # local skip_keys_plus="libopencv-dev libopencv-contrib-dev libopencv-imgproc-dev python-opencv python3-opencv"
+    # sudo LC_ALL=C chroot . rosdep install \
+    #     --from-paths /home/${username}/ros2-linux/share \
+    #     --ignore-src -y \
+    #     --skip-keys "cyclonedds fastcdr fastrtps rti-connext-dds-6.0.1 urdfdom_headers ${skip_keys_plus}"
+    sudo LC_ALL=C chroot . apt install ros-dev-tools
+
+    __exit_rootfs_dev
+}
+
 function build_rootfs() {
+    [ $# != 3 ] && error "Input Param Error" && exit -1
     local is_custom=${1} # "yes" or "no"
     local need_dev=${2}  # "yes" or "no"
+    local need_ros2=${2}  # "yes" or "no"
 
     __check_errors
 
-    if [ ${is_custom} == "yes" ]; then
+    if [ ${need_dev} == "yes" ]; then
         __build_rootfs_impl "${is_custom}" "yes"
         [ -d ${JETSON_ROOTFS_DEV} ] && sudo rm -rf ${JETSON_ROOTFS_DEV}
+        __install_ros2
         __gen_rootfs_version
         sudo mv ${JETSON_ROOTFS} ${JETSON_ROOTFS_DEV}
         info "Rootfs Dev Genrate Done"
     fi
 
     __build_rootfs_impl "${is_custom}" "no"
+    __install_ros2
     __gen_rootfs_version
     info "Rootfs Genrate Done"
 }
@@ -690,11 +704,11 @@ function run_docker() {
             --name=${docker_name} \
             --net=host \
             -v /dev/bus/usb:/dev/bus/usb \
-            -v ${PWD}:/l4t \
+            -v ${top_dir}:/l4t \
             jetson_dev:${DOCKER_VERSION}
     fi
 
-    if ! docker ps -qf "name=$docker_name" | grep -q . ; then
+    if ! docker ps -qf "name=$docker_name" | grep -q .; then
         docker start ${docker_name}
     fi
     docker exec -it ${docker_name} fish
@@ -702,6 +716,7 @@ function run_docker() {
 
 function build_docker() {
     cp $(basename $0) docker/files -ardf
+    # --build-arg HTTP_PROXY="http://localhost:20171" --build-arg HTTPS_PROXY="http://localhost:20171" --build-arg NO_PROXY=localhost,127.0.0.1
     docker build ./docker -t jetson_dev:${DOCKER_VERSION}
     # run_docker bash /l4t/jd.sh --install_sdk /l4t
 }
@@ -742,9 +757,10 @@ function usage() {
         [ --config_app | -c ] Config Application
         [ --build_app |  -b ] Build Application
         [ --build_kernel ] Build Linux Kernel & Modules & Display Modulesx
-        [ --build_rootfs <is_custom> <need_dev> ] Build Rootfs; 
+        [ --build_rootfs <is_custom> <need_dev> <need_ros2> ] Build Rootfs; 
             is_custom: yes, no; 
-            need_dev: yes, no
+            need_dev: yes, no;
+            need_ros2: yes, no;
         [ --build_image <type> ] Build Flash Image; 
             type : nvme, sd, usb
         [ --install_kernel ] Install Linux Kernel & Modules & Display Modules To Flash Dir & Rootfs
@@ -785,7 +801,7 @@ function parse_args() {
             exit 0
             ;;
         --build_rootfs)
-            build_rootfs ${2} ${3}
+            build_rootfs ${2} ${3} ${4}
             exit 0
             ;;
         --install_kernel)
@@ -809,7 +825,7 @@ function parse_args() {
             exit 0
             ;;
         *)
-            echo "ERROR: Invalid parameter. Exiting..."
+            error "ERROR: Invalid parameter. Exiting..."
             usage
             exit 1
             ;;

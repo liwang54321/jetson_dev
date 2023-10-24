@@ -23,59 +23,25 @@ RUN apt-get install -y tzdata \
 
 # install apps
 RUN apt install -y --no-install-recommends \
-                python3-pip \
-                python3-dev \
-                python-is-python3 \
-                fish \
-                rsync \
-                git \
-                tig \
-                lrzsz \
-                openssh-server \
-                build-essential \
-                qemu-user-static \
-                zip \
-                unzip \
-                nfs-kernel-server \
-                ncurses-dev \
-                libtool \
-                libssl-dev \
-                autoconf \
-                automake \
-                bison \
-                device-tree-compiler \
-                tftp-hpa \
-                tftpd-hpa \
-                tmux \
-                htop \
-                libusb-1.0-0-dev \
-                neovim \
-                wget \
-                tree \
-                curl \
+                python3-pip python3-dev python-is-python3 \
+                fish sudo \
+                rsync lrzsz tmux tio xxd \
+                git tig neovim \
+                sshpass openssh-server nfs-kernel-server \
+                build-essential qemu-user-static ninja-build \
+                zip unzip pigz \
+                libtool libssl-dev libusb-1.0-0-dev usbutils libncurses5-dev ncurses-dev \
+                autoconf automake bison device-tree-compiler \
+                tftp-hpa tftpd-hpa \
+                htop tree wget curl \
                 silversearcher-ag \
-                pkg-config \
-                ninja-build \
-                gettext\
-                libncurses5-dev \
-                mtools \
-                bc \
-                ctags \
-                sudo \
-                gnutls-bin \
+                gnutls-bin pkg-config gettext mtools bc ctags cpio flex \
                 apt-transport-https \
-                usbutils \
-                iputils-ping \
-                net-tools \
-                iproute2 \
-                pigz \
-                minicom \
-                sshpass \
-                cpio \
-                flex \
-                xxd \
-                kmod \
-                gnupg2
+                iputils-ping net-tools iproute2 \
+                kmod gnupg2 && \
+                apt-get autoremove -y && \
+                apt-get clean && \
+                rm -rf /var/lib/apt/lists/*
 
 # User
 RUN useradd -d "/home/${user_name}" -m \
@@ -98,20 +64,21 @@ RUN git config --global user.name ${user_name} \
     && git config --global http.postBuffer 1048576000 
 
 # cmake
-ARG cmake_version=3.27.6
-RUN wget -N https://github.com/Kitware/CMake/releases/download/v${cmake_version}/cmake-${cmake_version}.tar.gz
-RUN tar -xzf cmake-${cmake_version}.tar.gz -C .\
-    && cd cmake-${cmake_version} \
-    && ./bootstrap --parallel=$(nproc) \
-    && make -j$(nproc) \
-    && sudo make install \
-    && cd .. \
-    && rm cmake* -rf
+RUN sudo apt update && \
+    sudo apt-get install -y --no-install-recommends dialog && \
+    curl https://apt.kitware.com/kitware-archive.sh | sudo bash && \
+    sudo apt update && \
+    sudo apt install cmake \
+    cmake --version && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # space vim
 RUN curl -sLf https://spacevim.org/install.sh | bash
 
 # for fish
+SHELL ["/bin/fish", "-c"]
 RUN curl https://gitee.com/mirrors/oh-my-fish/raw/master/bin/install | fish
 
 # python
@@ -129,10 +96,13 @@ RUN apt install -y --no-install-recommends \
 RUN sudo apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc && \
     sudo sh -c 'echo "\ndeb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list' && \
     sudo apt update && \
-    sudo apt-get install cuda-cross-aarch64-11-4 cuda-cupti-cross-aarch64-11-4 \
+    sudo apt-get install -y --no-install-recommends cuda-cross-aarch64-11-4 cuda-cupti-cross-aarch64-11-4 \
         cuda-sanitizer-11-4 cuda-toolkit-11-4 libnvvpi2 nsight-compute-2022.2.1 \
         nsight-compute-addon-l4t-2022.2.1 nsight-graphics-for-embeddedlinux-2023.2.0.0 \
-        nsight-systems-2023.2.4 nvsci python3.8-vpi2 vpi2-demos vpi2-cross-aarch64-l4t vpi2-dev vpi2-samples -y
+        nsight-systems-2023.2.4 nvsci python3.8-vpi2 vpi2-demos vpi2-cross-aarch64-l4t vpi2-dev vpi2-samples  && \
+                apt-get autoremove -y && \
+                apt-get clean && \
+                rm -rf /var/lib/apt/lists/*
 
 # COPY SDK
 COPY --chown=${user_name}:${user_name} files/l4t_flash_prerequisites.sh /tmp/
