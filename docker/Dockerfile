@@ -12,14 +12,23 @@ ENV TIME_ZONE Asia/Shanghai
 ENV LANG C.UTF-8
 
 # update source
-RUN  apt update && apt install --no-install-recommends --reinstall ca-certificates -y
-COPY --chown=root:root ./files/sources.list.20.04  /etc/apt/sources.list
-RUN apt clean && apt update && apt upgrade -y
+RUN apt update && \
+    apt install -y --no-install-recommends --reinstall ca-certificates && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --chown=root:root ./files/sources.list.${ubuntu_version}  /etc/apt/sources.list
 
 # timezone
-RUN apt-get install -y tzdata \
-    && ln -snf /usr/share/zoneinfo/$TIME_ZONE /etc/localtime && echo $TIME_ZONE > /etc/timezone \
-    && dpkg-reconfigure -f noninteractive tzdata
+RUN apt clean && apt update && apt upgrade -y && \
+    apt-get install -y tzdata && \
+    ln -snf /usr/share/zoneinfo/$TIME_ZONE /etc/localtime && \
+    echo $TIME_ZONE > /etc/timezone && \
+    dpkg-reconfigure -f noninteractive tzdata && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # install apps
 RUN apt install -y --no-install-recommends \
