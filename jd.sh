@@ -482,7 +482,36 @@ function __setup_dev_env() {
     popd >/dev/null 2>&1
 }
 
-function setup_host_env() {
+function __install_docker() {
+    if ! command -v docker &> /dev/null ; then
+        for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc;
+        do
+            sudo apt-get remove -y --purge $pkg
+        done
+        sudo apt-get autoremove -y
+
+        # Add Docker's official GPG key:
+        sudo apt-get update
+        sudo apt-get install ca-certificates curl gnupg
+        sudo install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+        # Add the repository to Apt sources:
+        echo \
+        "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+        "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+        sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        sudo apt-get update
+
+        sudo apt-get install --no-install-recommends -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        sudo systemctl restart docker
+        sudo usermod -aG docker ${USER}
+    fi
+
+}
+
+function __setup_host_env() {
     pushd "${JETSON_SDK_HOME}" >/dev/null 2>&1
     # Install the prerequisite dependencies for flashing
     info "Start Install Jetson Prerequisite"
@@ -492,8 +521,9 @@ function setup_host_env() {
 
 function setup_env() {
     sudo apt install -y --no-install-recommends \
-        qemu-user-static \
-        docker.io
+        qemu-user-static
+    __install_docker
+    __setup_host_env
 }
 
 function __install_custom_layer() {
@@ -822,6 +852,10 @@ function parse_args() {
             ;;
         -r | --run_docker)
             run_docker
+            exit 0
+            ;;
+        --setup_env)
+            setup_env
             exit 0
             ;;
         *)
