@@ -17,7 +17,10 @@ https://docs.nvidia.com/vpi/index.html
 - Jetson Linux Download
 https://developer.nvidia.com/embedded/jetson-linux
 
-- JetPack Download
+- Jetson Download Center
+https://developer.nvidia.com/embedded/downloads
+
+- JetPack SDK
 https://developer.nvidia.com/embedded/jetpack
 
 # TODO
