@@ -30,6 +30,7 @@
   https://developer.download.nvidia.cn/embedded/L4T/r36_Release_v4.3/release/WebRTC_R36.4.3_aarch64.tbz2
   https://developer.nvidia.com/embedded/L4T/r36_release_v4.3/Release/Jetson_Multimedia_API_r36.4.3_aarch64.tbz2
   https://developer.nvidia.com/downloads/embedded/l4t/r36_release_v3.0/toolchain/aarch64--glibc--stable-2022.08-1.tar.bz2
+  https://developer.nvidia.com/downloads/embedded/l4t/r36_release_v4.3/release/ota_tools_r36.4.3_aarch64.tbz2
   ```
 
 # TODO
