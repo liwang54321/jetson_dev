@@ -1,11 +1,8 @@
-ARG ubuntu_version=20.04
+ARG ubuntu_version=22.04
 FROM ubuntu:${ubuntu_version}
 
+ARG ubuntu_version=22.04
 ARG user_name=lw
-
-ARG jetson_sdk=Jetson_Linux_R35.4.1_aarch64.tbz2
-ARG jetson_rootfs=Tegra_Linux_Sample-Root-Filesystem_R35.4.1_aarch64.tbz2
-
 
 ENV DEBIAN_FRONTEND noninteractive
 ENV TIME_ZONE Asia/Shanghai
@@ -31,7 +28,8 @@ RUN apt clean && apt update && apt upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
 # install apps
-RUN apt install -y --no-install-recommends \
+RUN apt update && apt upgrade -y && \
+    apt install -y --no-install-recommends \
                 python3-pip python3-dev python-is-python3 \
                 fish sudo \
                 rsync lrzsz tmux tio xxd \
@@ -44,7 +42,7 @@ RUN apt install -y --no-install-recommends \
                 tftp-hpa tftpd-hpa \
                 htop tree wget curl \
                 silversearcher-ag \
-                gnutls-bin pkg-config gettext mtools bc ctags cpio flex \
+                gnutls-bin pkg-config gettext mtools bc cpio flex \
                 apt-transport-https \
                 iputils-ping net-tools iproute2 \
                 kmod gnupg2 && \
@@ -79,16 +77,17 @@ RUN sudo apt update && \
     sudo apt update && \
     sudo apt install cmake \
     cmake --version && \
-    apt-get autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    sudo apt-get autoremove -y && \
+    sudo apt-get clean && \
+    sudo rm -rf /var/lib/apt/lists/*
 
 # space vim
 RUN curl -sLf https://spacevim.org/install.sh | bash
 
 # for fish
 SHELL ["/bin/fish", "-c"]
-RUN curl https://gitee.com/mirrors/oh-my-fish/raw/master/bin/install | fish
+RUN curl https://raw.githubusercontent.com/oh-my-fish/oh-my-fish/master/bin/install -o /tmp/install && \
+    fish /tmp/install --noninteractive && rm /tmp/install
 
 # python
 RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
@@ -96,22 +95,27 @@ RUN pip3 config set global.index-url https://mirrors.aliyun.com/pypi/simple/ \
     && sudo pip3 install --upgrade conan \
     && conan profile detect --force
 
-
 # Jetson Specific Packages
-RUN apt install -y --no-install-recommends \ 
-    whiptail
-
-# Install JetPack; FIXME: Need Proxy
+RUN sudo apt update && \
+    sudo apt install -y --no-install-recommends \ 
+    whiptail && \
+    sudo apt-get autoremove -y && \
+    sudo apt-get clean && \
+    sudo rm -rf /var/lib/apt/lists/*
+    
 RUN sudo apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc && \
-    sudo sh -c 'echo "\ndeb http://repo.download.nvidia.com/jetson/x86_64/focal r35.4 main" >> /etc/apt/sources.list' && \
+    sudo apt-key adv --fetch-keys http://l4t-repo.nvidia.com/jetson-ota-internal.key && \
+    echo "deb http://repo.download.nvidia.com/jetson/x86_64/jammy r36.4 main" | sudo tee -a /etc/apt/sources.list.d/nvidia-l4t-apt-source.list && \
+    sudo wget -O /etc/apt/trusted.gpg.d/jetson-ota-internal.gpg http://repo.download.nvidia.com/jetson/jetson-ota-public.asc && \
     sudo apt update && \
-    sudo apt-get install -y --no-install-recommends cuda-cross-aarch64-11-4 cuda-cupti-cross-aarch64-11-4 \
-        cuda-sanitizer-11-4 cuda-toolkit-11-4 libnvvpi2 nsight-compute-2022.2.1 \
-        nsight-compute-addon-l4t-2022.2.1 nsight-graphics-for-embeddedlinux-2023.2.0.0 \
-        nsight-systems-2023.2.4 nvsci python3.8-vpi2 vpi2-demos vpi2-cross-aarch64-l4t vpi2-dev vpi2-samples  && \
-                apt-get autoremove -y && \
-                apt-get clean && \
-                rm -rf /var/lib/apt/lists/*
+    sudo apt-get install cuda-toolkit-12-6 cuda-cross-aarch64-12-6 \
+        nvsci libnvvpi3 vpi3-dev vpi3-cross-aarch64-l4t python3.10-vpi3 \
+        vpi3-samples vpi3-python-src \
+        nsight-systems-2024.5.4 nsight-graphics-for-embeddedlinux-2024.2.0.0 && \
+        sudo apt-get autoremove -y && \
+        sudo apt-get clean && \
+        sudo rm -rf /var/lib/apt/lists/*
+
 
 # COPY SDK
 COPY --chown=${user_name}:${user_name} files/l4t_flash_prerequisites.sh /tmp/

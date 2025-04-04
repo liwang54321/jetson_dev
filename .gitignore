@@ -2,7 +2,8 @@
 /hardware
 /Linux_for_Tegra
 /Linux_for_Tegra.tgz
-/packages
-/toolchain
+/Packages
+/Toolchains
 /.sdk_variable.env
-/application/CMakeUserPresets.json
+/Application/CMakeUserPresets.json
+/Packages

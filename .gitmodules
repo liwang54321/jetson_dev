@@ -1,7 +1,7 @@
-[submodule "thirdparty/jetson-utils"]
-	path = thirdparty/jetson-utils
+[submodule "Thirdparty/jetson-utils"]
+	path = Thirdparty/jetson-utils
 	url = https://github.com/dusty-nv/jetson-utils.git
     branch = master
-[submodule "thirdparty/edk2-nvidia"]
-	path = thirdparty/edk2-nvidia
+[submodule "Thirdparty/edk2-nvidia"]
+	path = Thirdparty/edk2-nvidia
 	url = https://github.com/NVIDIA/edk2-nvidia.git
