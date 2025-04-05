@@ -103,12 +103,10 @@ RUN sudo apt update && \
     sudo apt-get clean && \
     sudo rm -rf /var/lib/apt/lists/*
     
-RUN sudo apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc && \
-    sudo apt-key adv --fetch-keys http://l4t-repo.nvidia.com/jetson-ota-internal.key && \
-    echo "deb http://repo.download.nvidia.com/jetson/x86_64/jammy r36.4 main" | sudo tee -a /etc/apt/sources.list.d/nvidia-l4t-apt-source.list && \
-    sudo wget -O /etc/apt/trusted.gpg.d/jetson-ota-internal.gpg http://repo.download.nvidia.com/jetson/jetson-ota-public.asc && \
+RUN sudo apt-key adv --fetch-keys https://repo.download.nvidia.com/jetson/jetson-ota-public.asc && \
+    echo "deb https://repo.download.nvidia.com/jetson/x86_64/jammy r36.4 main" | sudo tee -a /etc/apt/sources.list.d/nvidia-l4t-apt-source.list && \
     sudo apt update && \
-    sudo apt-get install cuda-toolkit-12-6 cuda-cross-aarch64-12-6 \
+    sudo apt-get install -y --no-install-recommends cuda-toolkit-12-6 cuda-cross-aarch64-12-6 \
         nvsci libnvvpi3 vpi3-dev vpi3-cross-aarch64-l4t python3.10-vpi3 \
         vpi3-samples vpi3-python-src \
         nsight-systems-2024.5.4 nsight-graphics-for-embeddedlinux-2024.2.0.0 && \
@@ -121,6 +119,7 @@ RUN sudo apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-o
 COPY --chown=${user_name}:${user_name} files/l4t_flash_prerequisites.sh /tmp/
 
 # Install SDK
+SHELL ["/bin/bash", "-c"]
 ARG sdk_path=/l4t
 RUN sudo mkdir ${sdk_path} && sudo chown ${user_name}:${user_name} ${sdk_path} -R
 RUN sudo sh -c "/tmp/l4t_flash_prerequisites.sh"

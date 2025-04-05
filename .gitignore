@@ -7,3 +7,4 @@
 /.sdk_variable.env
 /Application/CMakeUserPresets.json
 /Packages
+/Docker/files/l4t_flash_prerequisites.sh
